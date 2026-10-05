@@ -1,229 +1,630 @@
 -- ============================================================
--- N3X Fake Bomb Jump Plugin
--- New GUI, styled to match N3X theme
--- Auto-detects equipped FakeBomb — button just PLACES it.
--- Credits: @Kenzie (original), restyled for N3X
+-- N3X GUI — Silent Aim Only
+-- Black + Gray theme.
+-- Silent Aim uses Mouse.Hit hook (works in MM2).
+-- Silent Aim is ALWAYS active while "Enable" is ON — no key needed.
+-- Hit % locked at 100. Prediction locked ON.
+-- Defaults: Enable ON, Show FOV ON, Ping Compensate ON, Visible Check OFF.
+-- Persistent: re-executing does NOT remove the GUI.
 -- ============================================================
 
-local Players           = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local UserInputService  = game:GetService("UserInputService")
-local TweenService      = game:GetService("TweenService")
-local RunService        = game:GetService("RunService")
+local Players          = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local TweenService     = game:GetService("TweenService")
+local RunService       = game:GetService("RunService")
 
-local LocalPlayer = Players.LocalPlayer
-local playerGui   = LocalPlayer:WaitForChild("PlayerGui")
+local player    = Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
+local camera    = workspace.CurrentCamera
 
 -- ============================================================
--- THEME (kept so nothing else changes)
+-- PERSISTENCE CHECK
 -- ============================================================
-local PINK   = Color3.fromRGB(255, 114, 135)
-local TEXT   = Color3.fromRGB(255, 210, 220)
-local DARK   = Color3.fromRGB(33, 0, 0)
-local BG     = Color3.fromRGB(48, 3, 3)
-local BG_HDR = Color3.fromRGB(33, 0, 0)
-local STROKE = Color3.fromRGB(120, 40, 50)
-local ON_C   = Color3.fromRGB(255, 114, 135)
-local OFF_C  = Color3.fromRGB(90, 30, 40)
-local FONT   = Enum.Font.Garamond
+do
+    local existing = playerGui:FindFirstChild("N3X_AimbotGui")
+    if existing then
+        existing.Enabled = true
+        existing.DisplayOrder = 999
+        local mainFrame = existing:FindFirstChild("MainFrame")
+        if mainFrame then mainFrame.Visible = true end
+        warn("[N3X] Silent Aim GUI already loaded — keeping existing instance.")
+        return
+    end
+end
+
+local connections = {}
+local function keep(c) table.insert(connections, c); return c end
+
+-- ============================================================
+-- THEME — black + gray
+-- ============================================================
+local BG        = Color3.fromRGB(18, 18, 18)
+local BG_SOFT   = Color3.fromRGB(26, 26, 26)
+local BG_HDR    = Color3.fromRGB(32, 32, 32)
+local BG_LIST   = Color3.fromRGB(22, 22, 22)
+local BG_ROW    = Color3.fromRGB(30, 30, 30)
+local STROKE    = Color3.fromRGB(70, 70, 70)
+local STROKE_HI = Color3.fromRGB(140, 140, 140)
+local ACCENT    = Color3.fromRGB(200, 200, 200)
+local TEXT      = Color3.fromRGB(220, 220, 220)
+local TEXT_MUT  = Color3.fromRGB(150, 150, 150)
+local ON_C      = Color3.fromRGB(180, 180, 180)
+local OFF_C     = Color3.fromRGB(60, 60, 60)
+local FONT      = Enum.Font.Gotham
+
+local BG_T      = 0.08
+local CONTENT_T = 0.08
+local BTN_T     = 0.15
+
+local function corner(o, r)
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, r or 8)
+    c.Parent = o
+    return c
+end
+
+local function stroke(o, color, thickness, transparency)
+    local s = Instance.new("UIStroke")
+    s.Color = color or STROKE
+    s.Thickness = thickness or 1
+    s.Transparency = transparency or 0
+    s.Parent = o
+    return s
+end
+
+-- ============================================================
+-- SCREEN GUI
+-- ============================================================
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "N3X_AimbotGui"
+ScreenGui.Parent = playerGui
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.ResetOnSpawn = false
+ScreenGui.IgnoreGuiInset = true
+ScreenGui.DisplayOrder = 999
+
+-- ============================================================
+-- FOV CIRCLE
+-- ============================================================
+local FovCircle = Instance.new("Frame")
+FovCircle.Name = "N3X_FovCircle"
+FovCircle.Parent = ScreenGui
+FovCircle.AnchorPoint = Vector2.new(0.5, 0.5)
+FovCircle.BackgroundTransparency = 1
+FovCircle.BorderSizePixel = 0
+FovCircle.Visible = false
+FovCircle.ZIndex = 2
+
+local fovCorner = Instance.new("UICorner")
+fovCorner.CornerRadius = UDim.new(1, 0)
+fovCorner.Parent = FovCircle
+
+local fovStroke = Instance.new("UIStroke")
+fovStroke.Color = ACCENT
+fovStroke.Thickness = 1.5
+fovStroke.Transparency = 0.25
+fovStroke.Parent = FovCircle
+
+_G.N3X_FovCircle = {
+    frame = FovCircle,
+    show = function(radius, visible)
+        local r = radius * 2
+        FovCircle.Size = UDim2.new(0, r, 0, r)
+        FovCircle.Visible = visible == true
+    end
+}
+
+keep(RunService.RenderStepped:Connect(function()
+    if not FovCircle.Visible then return end
+    local m = UserInputService:GetMouseLocation()
+    FovCircle.Position = UDim2.new(0, m.X, 0, m.Y)
+end))
+
+-- ============================================================
+-- MAIN FRAME
+-- ============================================================
+local Frame = Instance.new("Frame")
+Frame.Name = "MainFrame"
+Frame.Parent = ScreenGui
+Frame.BackgroundColor3 = BG
+Frame.BackgroundTransparency = BG_T
+Frame.BorderSizePixel = 0
+Frame.AnchorPoint = Vector2.new(0.5, 0.5)
+Frame.Position = UDim2.new(0.5, 0, 0.5, 0)
+Frame.Size = UDim2.new(0, 360, 0, 280)
+Frame.Active = true
+Frame.Visible = true
+Frame.ZIndex = 1
+corner(Frame, 10)
+stroke(Frame, STROKE_HI, 1, 0.3)
+
+-- Header
+local Header = Instance.new("Frame")
+Header.Parent = Frame
+Header.BackgroundColor3 = BG_HDR
+Header.BackgroundTransparency = 0
+Header.BorderSizePixel = 0
+Header.Size = UDim2.new(1, 0, 0, 32)
+Header.ZIndex = 5
+corner(Header, 10)
+
+local HeaderMask = Instance.new("Frame")
+HeaderMask.Parent = Header
+HeaderMask.BackgroundColor3 = BG_HDR
+HeaderMask.BorderSizePixel = 0
+HeaderMask.Position = UDim2.new(0, 0, 1, -10)
+HeaderMask.Size = UDim2.new(1, 0, 0, 10)
+HeaderMask.ZIndex = 5
+
+local Title = Instance.new("TextLabel")
+Title.Parent = Header
+Title.BackgroundTransparency = 1
+Title.Position = UDim2.new(0, 14, 0, 0)
+Title.Size = UDim2.new(0, 200, 1, 0)
+Title.Font = Enum.Font.GothamBold
+Title.Text = "SILENT AIM"
+Title.TextColor3 = TEXT
+Title.TextSize = 14
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.ZIndex = 6
+
+-- ============================================================
+-- PAGE HOLDER
+-- ============================================================
+local PageHolder = Instance.new("Frame")
+PageHolder.Parent = Frame
+PageHolder.BackgroundTransparency = 1
+PageHolder.Position = UDim2.new(0, 0, 0, 32)
+PageHolder.Size = UDim2.new(1, 0, 1, -32)
+PageHolder.ZIndex = 4
+
+local SilentPage = Instance.new("Frame")
+SilentPage.Name = "SilentPage"
+SilentPage.Parent = PageHolder
+SilentPage.BackgroundTransparency = 1
+SilentPage.Size = UDim2.new(1, 0, 1, 0)
+SilentPage.Position = UDim2.new(0, 0, 0, 0)
+SilentPage.Visible = true
+SilentPage.ZIndex = 4
+
+-- ============================================================
+-- ROW HELPERS
+-- ============================================================
+local function makeScroll(parent)
+    local sf = Instance.new("ScrollingFrame")
+    sf.Parent = parent
+    sf.BackgroundTransparency = 1
+    sf.BorderSizePixel = 0
+    sf.Position = UDim2.new(0, 12, 0, 8)
+    sf.Size = UDim2.new(1, -20, 1, -16)
+    sf.CanvasSize = UDim2.new(0, 0, 0, 0)
+    sf.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    sf.ScrollBarThickness = 3
+    sf.ScrollBarImageColor3 = STROKE_HI
+    sf.ZIndex = 4
+    local l = Instance.new("UIListLayout")
+    l.Padding = UDim.new(0, 6)
+    l.SortOrder = Enum.SortOrder.LayoutOrder
+    l.Parent = sf
+    return sf
+end
+
+local function Section(parent, text)
+    local l = Instance.new("TextLabel")
+    l.Parent = parent
+    l.BackgroundTransparency = 1
+    l.Size = UDim2.new(1, 0, 0, 16)
+    l.Font = FONT
+    l.Text = text
+    l.TextColor3 = ACCENT
+    l.TextSize = 11
+    l.TextXAlignment = Enum.TextXAlignment.Left
+    l.ZIndex = 4
+end
+
+local function Divider(parent)
+    local d = Instance.new("Frame")
+    d.Parent = parent
+    d.BackgroundColor3 = STROKE
+    d.BackgroundTransparency = 0.4
+    d.BorderSizePixel = 0
+    d.Size = UDim2.new(1, 0, 0, 1)
+    d.ZIndex = 4
+end
+
+local LABEL_W  = 108
+local GAP      = 8
+local SWITCH_W = 32
+local SWITCH_H = 16
+
+local function makeRow(parent, h)
+    local f = Instance.new("Frame")
+    f.Parent = parent
+    f.BackgroundTransparency = 1
+    f.Size = UDim2.new(1, 0, 0, h)
+    f.ZIndex = 4
+    return f
+end
+
+local function makeLabel(holder, text)
+    local lbl = Instance.new("TextLabel")
+    lbl.Parent = holder
+    lbl.BackgroundTransparency = 1
+    lbl.Size = UDim2.new(0, LABEL_W, 1, 0)
+    lbl.Font = FONT
+    lbl.Text = text
+    lbl.TextColor3 = TEXT
+    lbl.TextSize = 12
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.TextYAlignment = Enum.TextYAlignment.Center
+    lbl.TextTruncate = Enum.TextTruncate.AtEnd
+    lbl.ZIndex = 4
+    return lbl
+end
+
+local function makeSwitch(holder, x, default, callback)
+    local trackF = Instance.new("Frame")
+    trackF.Parent = holder
+    trackF.AnchorPoint = Vector2.new(0, 0.5)
+    trackF.Position = UDim2.new(0, x, 0.5, 0)
+    trackF.Size = UDim2.new(0, SWITCH_W, 0, SWITCH_H)
+    trackF.BackgroundColor3 = default and ON_C or OFF_C
+    trackF.BorderSizePixel = 0
+    trackF.ZIndex = 4
+    corner(trackF, 1000)
+
+    local knob = Instance.new("Frame")
+    knob.Parent = trackF
+    knob.AnchorPoint = Vector2.new(0.5, 0.5)
+    knob.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    knob.BorderSizePixel = 0
+    knob.Size = UDim2.new(0, 12, 0, 12)
+    knob.Position = default and UDim2.new(1, -8, 0.5, 0) or UDim2.new(0, 8, 0.5, 0)
+    knob.ZIndex = 5
+    corner(knob, 1000)
+
+    local click = Instance.new("TextButton")
+    click.Parent = trackF
+    click.BackgroundTransparency = 1
+    click.Text = ""
+    click.Size = UDim2.new(1, 0, 1, 0)
+    click.AutoButtonColor = false
+    click.ZIndex = 6
+
+    local state = default and true or false
+    local function setState(v, fire)
+        state = v == true
+        TweenService:Create(knob, TweenInfo.new(0.15), {
+            Position = state and UDim2.new(1, -8, 0.5, 0) or UDim2.new(0, 8, 0.5, 0)
+        }):Play()
+        TweenService:Create(trackF, TweenInfo.new(0.15), {
+            BackgroundColor3 = state and ON_C or OFF_C
+        }):Play()
+        if fire and callback then task.spawn(callback, state) end
+    end
+    click.MouseButton1Click:Connect(function() setState(not state, true) end)
+    -- fire callback once with the default state so settings match the UI on load
+    if callback then task.spawn(callback, state) end
+    return setState
+end
+
+local function Toggle(parent, label, default, callback)
+    local h = makeRow(parent, 20)
+    makeLabel(h, label)
+    return h, makeSwitch(h, LABEL_W + GAP, default, callback)
+end
+
+local SLIDER_X = LABEL_W + GAP + SWITCH_W + 8
+local SLIDER_W = 110
+
+local function Slider(parent, label, default, min, max, onChange, onToggle)
+    min = min or 0; max = max or 100
+    local pct = math.clamp((default - min) / (max - min), 0, 1)
+    local h = makeRow(parent, 20)
+    local lbl = makeLabel(h, label .. ": " .. default)
+    makeSwitch(h, LABEL_W + GAP, false, onToggle)
+
+    local trackF = Instance.new("Frame")
+    trackF.Parent = h
+    trackF.AnchorPoint = Vector2.new(0, 0.5)
+    trackF.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    trackF.BorderSizePixel = 0
+    trackF.Position = UDim2.new(0, SLIDER_X, 0.5, 0)
+    trackF.Size = UDim2.new(0, SLIDER_W, 0, 4)
+    trackF.ZIndex = 4
+    corner(trackF, 1000)
+
+    local fill = Instance.new("Frame")
+    fill.Parent = trackF
+    fill.BackgroundColor3 = ACCENT
+    fill.BorderSizePixel = 0
+    fill.Size = UDim2.new(pct, 0, 1, 0)
+    fill.ZIndex = 5
+    corner(fill, 1000)
+
+    local knob = Instance.new("Frame")
+    knob.Parent = trackF
+    knob.AnchorPoint = Vector2.new(0.5, 0.5)
+    knob.BackgroundColor3 = Color3.fromRGB(230, 230, 230)
+    knob.BorderSizePixel = 0
+    knob.Position = UDim2.new(pct, 0, 0.5, 0)
+    knob.Size = UDim2.new(0, 10, 0, 10)
+    knob.ZIndex = 6
+    corner(knob, 1000)
+
+    local hit = Instance.new("TextButton")
+    hit.Parent = h
+    hit.BackgroundTransparency = 1
+    hit.Text = ""
+    hit.AutoButtonColor = false
+    hit.Position = UDim2.new(0, SLIDER_X - 5, 0, 0)
+    hit.Size = UDim2.new(0, SLIDER_W + 10, 1, 0)
+    hit.ZIndex = 7
+
+    local dragging = false
+    local last = default
+    local function update(x)
+        local rel = math.clamp((x - trackF.AbsolutePosition.X) / trackF.AbsoluteSize.X, 0, 1)
+        fill.Size = UDim2.new(rel, 0, 1, 0)
+        knob.Position = UDim2.new(rel, 0, 0.5, 0)
+        local v = math.floor(min + (max - min) * rel + 0.5)
+        lbl.Text = label .. ": " .. v
+        if v ~= last then
+            last = v
+            if onChange then task.spawn(onChange, v) end
+        end
+    end
+    hit.InputBegan:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+            dragging = true; update(i.Position.X)
+        end
+    end)
+    keep(UserInputService.InputChanged:Connect(function(i)
+        if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+            update(i.Position.X)
+        end
+    end))
+    keep(UserInputService.InputEnded:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+            dragging = false
+        end
+    end))
+end
+
+-- ============================================================
+-- DROPDOWN
+-- ============================================================
+local function Dropdown(parent, label, options, default, onChange)
+    local h = makeRow(parent, 22)
+    makeLabel(h, label)
+
+    local btn = Instance.new("TextButton")
+    btn.Parent = h
+    btn.AnchorPoint = Vector2.new(1, 0.5)
+    btn.Position = UDim2.new(1, -2, 0.5, 0)
+    btn.Size = UDim2.new(0, 110, 1, 0)
+    btn.BackgroundColor3 = BG_ROW
+    btn.BorderSizePixel = 0
+    btn.AutoButtonColor = false
+    btn.Font = FONT
+    btn.Text = default .. "  v"
+    btn.TextColor3 = TEXT
+    btn.TextSize = 12
+    btn.ZIndex = 4
+    corner(btn, 6)
+    stroke(btn, STROKE, 1, 0.3)
+
+    local list = Instance.new("Frame")
+    list.Parent = parent
+    list.BackgroundColor3 = BG_LIST
+    list.BorderSizePixel = 0
+    list.Size = UDim2.new(1, -4, 0, #options * 20 + 8)
+    list.Visible = false
+    list.ZIndex = 20
+    corner(list, 6)
+    stroke(list, STROKE_HI, 1, 0.2)
+
+    local lLayout = Instance.new("UIListLayout")
+    lLayout.Padding = UDim.new(0, 2)
+    lLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    lLayout.Parent = list
+
+    local lPad = Instance.new("UIPadding")
+    lPad.PaddingTop = UDim.new(0, 4)
+    lPad.PaddingBottom = UDim.new(0, 4)
+    lPad.PaddingLeft = UDim.new(0, 4)
+    lPad.PaddingRight = UDim.new(0, 4)
+    lPad.Parent = list
+
+    local open = false
+    local function setOpen(v)
+        open = v == true
+        list.Visible = open
+        if open then
+            local absPos = btn.AbsolutePosition
+            local absSize = btn.AbsoluteSize
+            local parentAbs = list.Parent.AbsolutePosition
+            list.Position = UDim2.new(0, absPos.X - parentAbs.X, 0, absPos.Y - parentAbs.Y + absSize.Y + 2)
+        end
+    end
+
+    btn.MouseButton1Click:Connect(function() setOpen(not open) end)
+
+    for _, opt in ipairs(options) do
+        local optBtn = Instance.new("TextButton")
+        optBtn.Parent = list
+        optBtn.BackgroundColor3 = BG_ROW
+        optBtn.BackgroundTransparency = 0
+        optBtn.BorderSizePixel = 0
+        optBtn.AutoButtonColor = false
+        optBtn.Size = UDim2.new(1, 0, 0, 18)
+        optBtn.Font = FONT
+        optBtn.Text = opt
+        optBtn.TextColor3 = TEXT
+        optBtn.TextSize = 12
+        optBtn.ZIndex = 21
+        corner(optBtn, 4)
+
+        optBtn.MouseEnter:Connect(function() optBtn.BackgroundColor3 = Color3.fromRGB(55, 55, 55) end)
+        optBtn.MouseLeave:Connect(function() optBtn.BackgroundColor3 = BG_ROW end)
+        optBtn.MouseButton1Click:Connect(function()
+            btn.Text = opt .. "  v"
+            setOpen(false)
+            if onChange then task.spawn(onChange, opt) end
+        end)
+    end
+
+    keep(UserInputService.InputBegan:Connect(function(i, gp)
+        if gp then return end
+        if not open then return end
+        if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+            local m = UserInputService:GetMouseLocation()
+            local ap = btn.AbsolutePosition
+            local as = btn.AbsoluteSize
+            local lp = list.AbsolutePosition
+            local ls_ = list.AbsoluteSize
+            local inBtn = m.X >= ap.X and m.X <= ap.X + as.X and m.Y >= ap.Y and m.Y <= ap.Y + as.Y
+            local inList = m.X >= lp.X and m.X <= lp.X + ls_.X and m.Y >= lp.Y and m.Y <= lp.Y + ls_.Y
+            if not inBtn and not inList then setOpen(false) end
+        end
+    end))
+
+    return btn, list
+end
 
 -- ============================================================
 -- STATE
+-- All ON by default EXCEPT Visible Check.
 -- ============================================================
-local onCooldown     = false
-local COOLDOWN_TIME  = 24
-local cooldownThread = nil
-local bombEquipped   = false
+local settings = {
+    SilentEnabled        = true,      -- ON by default
+    SilentTargetPart     = "Head",
+    SilentFOV            = 120,
+    SilentHitChance      = 100,       -- locked
+    SilentVisibleCheck   = false,     -- OFF by default
+    SilentShowFOV        = true,      -- ON by default
+    SilentPrediction     = true,      -- locked ON
+    SilentPredictionX    = 1.65,
+    SilentPredictionY    = 1.50,
+    SilentPingCompensate = true,      -- ON by default
+}
+_G.N3X_Settings = settings
+
+-- Aim is active whenever Enable is on — no key required.
+local function isAimActive()
+    return settings.SilentEnabled
+end
+_G.N3X_IsAimActive = isAimActive
 
 -- ============================================================
--- HELPERS (unchanged)
+-- TARGET PART RESOLVER
 -- ============================================================
-local function setStatus(txt) print("[N3X] " .. txt) end
-
-local function getCenterPosition()
-    local char = LocalPlayer.Character
+local function resolveTargetPartSilent(char)
     if not char then return nil end
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return nil end
-    local cam = workspace.CurrentCamera
-    local camDir = cam.CFrame.LookVector
-    local pos = hrp.Position + (camDir * 5)
-    local look = camDir
-    local right = Vector3.new(0, 1, 0):Cross(look)
-    local up = look:Cross(right)
-    return CFrame.new(
-        pos.X, pos.Y, pos.Z,
-        right.X, up.X, look.X,
-        right.Y, up.Y, look.Y,
-        right.Z, up.Z, look.Z
-    )
-end
-
-local function makeCharacterJump()
-    local char = LocalPlayer.Character
-    if char and char:FindFirstChild("Humanoid") then
-        char.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-    end
-end
-
-local function findFakeBomb()
-    local char = LocalPlayer.Character
-    if not char then return nil end
-    local tool = char:FindFirstChild("FakeBomb")
-    if tool and tool:IsA("Tool") then return tool end
-    return nil
-end
-
--- ============================================================
--- COOLDOWN (unchanged)
--- ============================================================
-local function resetCooldown()
-    onCooldown = false
-    if cooldownThread then
-        task.cancel(cooldownThread)
-        cooldownThread = nil
-    end
-end
-
-local function startCooldown()
-    onCooldown = true
-    if cooldownThread then task.cancel(cooldownThread); cooldownThread = nil end
-    cooldownThread = task.spawn(function()
-        for i = COOLDOWN_TIME, 1, -1 do
-            if not onCooldown then return end
-            setStatus("Cooldown: " .. i .. "s")
-            task.wait(1)
-        end
-        if onCooldown then
-            resetCooldown()
-        end
-    end)
-end
-
--- ============================================================
--- AUTO-DETECT (unchanged)
--- ============================================================
-local function syncUI()
-    if onCooldown then return end
-    bombEquipped = findFakeBomb() ~= nil
-    if bombEquipped then
-        setStatus("Equipped — ready to place")
-    else
-        setStatus("Waiting for bomb...")
-    end
-end
-
-local function watchCharacter(char)
-    if not char then return end
-    char.ChildAdded:Connect(function(c)
-        if c:IsA("Tool") and c.Name == "FakeBomb" then
-            task.wait(0.05)
-            syncUI()
-        end
-    end)
-    char.ChildRemoved:Connect(function(c)
-        if c:IsA("Tool") and c.Name == "FakeBomb" then
-            task.wait(0.05)
-            syncUI()
-        end
-    end)
-end
-
-LocalPlayer.CharacterAdded:Connect(function(char)
-    resetCooldown()
-    task.wait(0.5)
-    watchCharacter(char)
-    syncUI()
-end)
-
-if LocalPlayer.Character then
-    watchCharacter(LocalPlayer.Character)
-end
-
-task.spawn(function()
-    while true do
-        if not onCooldown then
-            local wasEquipped = bombEquipped
-            local nowEquipped = findFakeBomb() ~= nil
-            if nowEquipped ~= wasEquipped then
-                syncUI()
+    local w = settings.SilentTargetPart
+    if w == "Random" then
+        local picks = { "Head", "HumanoidRootPart", "UpperTorso", "LowerTorso" }
+        w = picks[math.random(1, #picks)]
+    elseif w == "Nearest" then
+        local mouse = UserInputService:GetMouseLocation()
+        local best, bestD = nil, math.huge
+        for _, d in ipairs(char:GetDescendants()) do
+            if d:IsA("BasePart") and d.Name ~= "HumanoidRootPart" then
+                local sp, on = camera:WorldToViewportPoint(d.Position)
+                if on then
+                    local dd = (Vector2.new(sp.X, sp.Y) - mouse).Magnitude
+                    if dd < bestD then best, bestD = d, dd end
+                end
             end
         end
-        task.wait(0.5)
+        return best
     end
-end)
+    return char:FindFirstChild(w) or char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
+end
 
 -- ============================================================
--- PLACE (this is the exact same body as the old MouseButton1Click)
+-- MM2 PREDICTION HELPERS
 -- ============================================================
-local function onPlace()
-    if onCooldown then return end
-    if not bombEquipped then
-        syncUI()
-        return
-    end
-
-    local bomb = findFakeBomb()
-    if not bomb then
-        syncUI()
-        return
-    end
-
-    local remote = bomb:FindFirstChild("Remote")
-    if not remote then
-        remote = bomb:FindFirstChild("Events") and bomb.Events:FindFirstChild("Remote")
-    end
-    if not remote then
-        setStatus("Remote not found on tool")
-        return
-    end
-
-    local cf = getCenterPosition()
-    if not cf then
-        setStatus("No character")
-        return
-    end
-
-    pcall(function()
-        remote:FireServer(cf, 50)
+local function getPing()
+    local ok, ping = pcall(function()
+        return player:GetNetworkPing() * 1000
     end)
-
-    makeCharacterJump()
-    startCooldown()
+    if ok and ping then return ping end
+    local stats = game:GetService("Stats")
+    local ok2, p = pcall(function()
+        return stats.Network.ServerStatsItem["Data Ping"]:GetValue()
+    end)
+    if ok2 and p then return p end
+    return 50
 end
 
--- ============================================================
--- TRIGGER (replaces the GUI button)
--- ============================================================
-UserInputService.InputBegan:Connect(function(input, gpe)
-    if gpe then return end
-    if input.KeyCode == Enum.KeyCode.E then
-        onPlace()
+local function predictPosition(part, predictionX, predictionY, pingCompensate)
+    if not part then return nil end
+    local velocity = part.AssemblyLinearVelocity or part.Velocity
+
+    local pingSeconds = 0
+    if pingCompensate then
+        pingSeconds = getPing() / 1000 / 2
     end
-end)
 
--- ============================================================
--- DEATH HOOK (unchanged)
--- ============================================================
-local function hookChar(char)
-    local hum = char:WaitForChild("Humanoid", 5)
-    if hum then
-        hum.Died:Connect(function()
-            resetCooldown()
-            syncUI()
-        end)
+    local travelTime = 0.05 + pingSeconds
+
+    local predicted = part.Position
+        + (velocity * travelTime * predictionX)
+        + Vector3.new(0, velocity.Y * travelTime * predictionY, 0)
+
+    return predicted
+end
+
+local function getAimPosition(part, aimSettings)
+    if not part then return nil end
+    if not aimSettings.PredictionEnabled then
+        return part.Position
     end
+    return predictPosition(
+        part,
+        aimSettings.PredictionX,
+        aimSettings.PredictionY,
+        aimSettings.PingCompensate
+    ) or part.Position
 end
 
-LocalPlayer.CharacterAdded:Connect(function(char)
-    hookChar(char)
-end)
+-- ============================================================
+-- SILENT AIM — MM2 Mouse.Hit Hook (auto-active while Enable is ON)
+-- ============================================================
+do
+    local mouse = player:GetMouse()
 
-if LocalPlayer.Character then
-    hookChar(LocalPlayer.Character)
-end
+    local function alive(plr)
+        local c = plr.Character
+        if not c then return false end
+        local h = c:FindFirstChildOfClass("Humanoid")
+        return h and h.Health > 0
+    end
 
-syncUI()
+    local ray = RaycastParams.new()
+    ray.FilterType = Enum.RaycastFilterType.Exclude
+    ray.IgnoreWater = true
 
-print("[N3X] Fake Bomb Jump loaded (headless). Press E to place.")
-print("Credits: @Kenzie (original)")
+    local function visible(plr, part)
+        if not settings.SilentVisibleCheck then return true end
+        if not part then return false end
+        local f = {}
+        if player.Character then table.insert(f, player.Character) end
+        ray.FilterDescendantsInstances = f
+        local o = camera.CFrame.Position
+        local hit = workspace:Raycast(o, part.Position - o, ray)
+        if not hit then return true end
+        return hit.Instance and hit.Instance:IsDescendantOf(plr.Character)
+    end
+
+    local function closest()
+        local mouseLoc = UserInputService:GetMouseLocation()
+        local best, bestD = nil, math.huge
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= player and alive(p) then
+                local pt = resolveTargetPartSilent(p.Character)
+                if pt then
+                    local sp, on = camera:WorldToViewportPoint(pt.Position)
+                    if on then
+                        local
