@@ -1,6 +1,11 @@
 -- ============================================================
--- N3X aimlabs — Silent Aim
--- N3X pink/red theme. Always on. 100% hit. Role check optional.
+-- N3X GUI — Silent Aim Only
+-- Red theme.
+-- Silent Aim uses Mouse.Hit hook (works in MM2).
+-- Silent Aim is ALWAYS active while "Enable" is ON — no key needed.
+-- Hit % locked at 100. Prediction locked ON.
+-- All toggles default ON except Visible Check.
+-- Persistent: re-executing does NOT remove the GUI.
 -- ============================================================
 
 local Players          = game:GetService("Players")
@@ -16,13 +21,13 @@ local camera    = workspace.CurrentCamera
 -- PERSISTENCE CHECK
 -- ============================================================
 do
-    local existing = playerGui:FindFirstChild("N3X_aimlabs")
+    local existing = playerGui:FindFirstChild("N3X_AimbotGui")
     if existing then
         existing.Enabled = true
         existing.DisplayOrder = 999
         local mainFrame = existing:FindFirstChild("MainFrame")
         if mainFrame then mainFrame.Visible = true end
-        warn("[N3X aimlabs] GUI already loaded — keeping existing instance.")
+        warn("[N3X] Silent Aim GUI already loaded — keeping existing instance.")
         return
     end
 end
@@ -31,21 +36,26 @@ local connections = {}
 local function keep(c) table.insert(connections, c); return c end
 
 -- ============================================================
--- THEME
+-- THEME — red / pink (N3X)
 -- ============================================================
 local PINK       = Color3.fromRGB(255, 114, 135)
-local PINK_HOVER = Color3.fromRGB(255, 160, 180)
-local SILVER     = Color3.fromRGB(200, 200, 208)
 local TEXT       = Color3.fromRGB(255, 210, 220)
-local DARK       = Color3.fromRGB(33, 0, 0)
+local TEXT_MUT   = Color3.fromRGB(200, 150, 160)
 local BG_MAIN    = Color3.fromRGB(48, 3, 3)
 local BG_PANEL   = Color3.fromRGB(24, 3, 5)
+local BG_HDR     = Color3.fromRGB(33, 0, 0)
 local BG_ROW     = Color3.fromRGB(40, 16, 18)
+local BG_LIST    = Color3.fromRGB(18, 0, 0)
 local STROKE     = Color3.fromRGB(120, 40, 50)
 local STROKE_HI  = Color3.fromRGB(160, 60, 75)
 local ON_C       = Color3.fromRGB(180, 30, 60)
 local OFF_C      = Color3.fromRGB(60, 20, 25)
-local FONT       = Enum.Font.Garamond
+local ACCENT     = PINK
+local FONT       = Enum.Font.Gotham
+
+local BG_T      = 0.08
+local CONTENT_T = 0.08
+local BTN_T     = 0.15
 
 local function corner(o, r)
     local c = Instance.new("UICorner")
@@ -67,7 +77,7 @@ end
 -- SCREEN GUI
 -- ============================================================
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "N3X_aimlabs"
+ScreenGui.Name = "N3X_AimbotGui"
 ScreenGui.Parent = playerGui
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.ResetOnSpawn = false
@@ -91,9 +101,9 @@ fovCorner.CornerRadius = UDim.new(1, 0)
 fovCorner.Parent = FovCircle
 
 local fovStroke = Instance.new("UIStroke")
-fovStroke.Color = Color3.fromRGB(180, 180, 180)
-fovStroke.Thickness = 1
-fovStroke.Transparency = 0.2
+fovStroke.Color = PINK
+fovStroke.Thickness = 1.5
+fovStroke.Transparency = 0.25
 fovStroke.Parent = FovCircle
 
 _G.N3X_FovCircle = {
@@ -118,82 +128,56 @@ local Frame = Instance.new("Frame")
 Frame.Name = "MainFrame"
 Frame.Parent = ScreenGui
 Frame.BackgroundColor3 = BG_MAIN
-Frame.BorderColor3 = Color3.fromRGB(0, 0, 0)
+Frame.BackgroundTransparency = BG_T
 Frame.BorderSizePixel = 0
 Frame.AnchorPoint = Vector2.new(0.5, 0.5)
 Frame.Position = UDim2.new(0.5, 0, 0.5, 0)
-Frame.Size = UDim2.new(0, 320, 0, 280)
+Frame.Size = UDim2.new(0, 360, 0, 280)
 Frame.Active = true
 Frame.Visible = true
 Frame.ZIndex = 1
 corner(Frame, 10)
+stroke(Frame, STROKE_HI, 1, 0.3)
 
--- ============================================================
--- HEADER
--- ============================================================
+-- Header
 local Header = Instance.new("Frame")
 Header.Parent = Frame
-Header.BackgroundColor3 = Color3.fromRGB(33, 0, 0)
+Header.BackgroundColor3 = BG_HDR
+Header.BackgroundTransparency = 0
 Header.BorderSizePixel = 0
-Header.Size = UDim2.new(1, 0, 0, 40)
+Header.Size = UDim2.new(1, 0, 0, 32)
 Header.ZIndex = 5
 corner(Header, 10)
 
 local HeaderMask = Instance.new("Frame")
 HeaderMask.Parent = Header
-HeaderMask.BackgroundColor3 = Color3.fromRGB(33, 0, 0)
+HeaderMask.BackgroundColor3 = BG_HDR
 HeaderMask.BorderSizePixel = 0
-HeaderMask.Position = UDim2.new(0, 0, 1, -12)
-HeaderMask.Size = UDim2.new(1, 0, 0, 12)
+HeaderMask.Position = UDim2.new(0, 0, 1, -10)
+HeaderMask.Size = UDim2.new(1, 0, 0, 10)
 HeaderMask.ZIndex = 5
 
-local HeaderDot = Instance.new("Frame")
-HeaderDot.Parent = Header
-HeaderDot.AnchorPoint = Vector2.new(0, 0.5)
-HeaderDot.BackgroundColor3 = PINK
-HeaderDot.BorderSizePixel = 0
-HeaderDot.Position = UDim2.new(0, 14, 0.5, 0)
-HeaderDot.Size = UDim2.new(0, 6, 0, 6)
-HeaderDot.ZIndex = 6
-corner(HeaderDot, 1000)
-
-local TitleMain = Instance.new("TextLabel")
-TitleMain.Parent = Header
-TitleMain.BackgroundTransparency = 1
-TitleMain.Position = UDim2.new(0, 26, 0, 5)
-TitleMain.Size = UDim2.new(1, -40, 0, 18)
-TitleMain.Font = Enum.Font.GothamBlack
-TitleMain.Text = "N3X"
-TitleMain.TextColor3 = PINK
-TitleMain.TextSize = 18
-TitleMain.TextXAlignment = Enum.TextXAlignment.Left
-TitleMain.ZIndex = 6
-
-local TitleSub = Instance.new("TextLabel")
-TitleSub.Parent = Header
-TitleSub.BackgroundTransparency = 1
-TitleSub.Position = UDim2.new(0, 26, 0, 21)
-TitleSub.Size = UDim2.new(1, -40, 0, 12)
-TitleSub.Font = FONT
-TitleSub.Text = "aimlabs"
-TitleSub.TextColor3 = TEXT
-TitleSub.TextSize = 11
-TitleSub.TextXAlignment = Enum.TextXAlignment.Left
-TitleSub.ZIndex = 6
+local Title = Instance.new("TextLabel")
+Title.Parent = Header
+Title.BackgroundTransparency = 1
+Title.Position = UDim2.new(0, 14, 0, 0)
+Title.Size = UDim2.new(0, 200, 1, 0)
+Title.Font = Enum.Font.GothamBold
+Title.Text = "SILENT AIM"
+Title.TextColor3 = PINK
+Title.TextSize = 14
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.ZIndex = 6
 
 -- ============================================================
--- CONTENT AREA
+-- PAGE HOLDER
 -- ============================================================
 local PageHolder = Instance.new("Frame")
-PageHolder.Name = "PageHolder"
 PageHolder.Parent = Frame
-PageHolder.BackgroundColor3 = BG_PANEL
-PageHolder.BackgroundTransparency = 0.05
-PageHolder.BorderSizePixel = 0
-PageHolder.Position = UDim2.new(0, 0, 0, 40)
-PageHolder.Size = UDim2.new(1, 0, 1, -40)
-PageHolder.ZIndex = 1
-corner(PageHolder, 10)
+PageHolder.BackgroundTransparency = 1
+PageHolder.Position = UDim2.new(0, 0, 0, 32)
+PageHolder.Size = UDim2.new(1, 0, 1, -32)
+PageHolder.ZIndex = 4
 
 local SilentPage = Instance.new("Frame")
 SilentPage.Name = "SilentPage"
@@ -212,15 +196,15 @@ local function makeScroll(parent)
     sf.Parent = parent
     sf.BackgroundTransparency = 1
     sf.BorderSizePixel = 0
-    sf.Position = UDim2.new(0, 14, 0, 12)
-    sf.Size = UDim2.new(1, -28, 1, -24)
+    sf.Position = UDim2.new(0, 12, 0, 8)
+    sf.Size = UDim2.new(1, -20, 1, -16)
     sf.CanvasSize = UDim2.new(0, 0, 0, 0)
     sf.AutomaticCanvasSize = Enum.AutomaticSize.Y
     sf.ScrollBarThickness = 3
     sf.ScrollBarImageColor3 = PINK
     sf.ZIndex = 4
     local l = Instance.new("UIListLayout")
-    l.Padding = UDim.new(0, 8)
+    l.Padding = UDim.new(0, 6)
     l.SortOrder = Enum.SortOrder.LayoutOrder
     l.Parent = sf
     return sf
@@ -230,11 +214,11 @@ local function Section(parent, text)
     local l = Instance.new("TextLabel")
     l.Parent = parent
     l.BackgroundTransparency = 1
-    l.Size = UDim2.new(1, 0, 0, 18)
+    l.Size = UDim2.new(1, 0, 0, 16)
     l.Font = FONT
     l.Text = text
     l.TextColor3 = PINK
-    l.TextSize = 14
+    l.TextSize = 11
     l.TextXAlignment = Enum.TextXAlignment.Left
     l.ZIndex = 4
 end
@@ -249,10 +233,10 @@ local function Divider(parent)
     d.ZIndex = 4
 end
 
-local LABEL_W  = 130
+local LABEL_W  = 108
 local GAP      = 8
-local SWITCH_W = 36
-local SWITCH_H = 18
+local SWITCH_W = 32
+local SWITCH_H = 16
 
 local function makeRow(parent, h)
     local f = Instance.new("Frame")
@@ -271,7 +255,7 @@ local function makeLabel(holder, text)
     lbl.Font = FONT
     lbl.Text = text
     lbl.TextColor3 = TEXT
-    lbl.TextSize = 14
+    lbl.TextSize = 12
     lbl.TextXAlignment = Enum.TextXAlignment.Left
     lbl.TextYAlignment = Enum.TextYAlignment.Center
     lbl.TextTruncate = Enum.TextTruncate.AtEnd
@@ -295,8 +279,8 @@ local function makeSwitch(holder, x, default, callback)
     knob.AnchorPoint = Vector2.new(0.5, 0.5)
     knob.BackgroundColor3 = Color3.fromRGB(255, 240, 245)
     knob.BorderSizePixel = 0
-    knob.Size = UDim2.new(0, 14, 0, 14)
-    knob.Position = default and UDim2.new(1, -10, 0.5, 0) or UDim2.new(0, 10, 0.5, 0)
+    knob.Size = UDim2.new(0, 12, 0, 12)
+    knob.Position = default and UDim2.new(1, -8, 0.5, 0) or UDim2.new(0, 8, 0.5, 0)
     knob.ZIndex = 5
     corner(knob, 1000)
 
@@ -312,7 +296,7 @@ local function makeSwitch(holder, x, default, callback)
     local function setState(v, fire)
         state = v == true
         TweenService:Create(knob, TweenInfo.new(0.15), {
-            Position = state and UDim2.new(1, -10, 0.5, 0) or UDim2.new(0, 10, 0.5, 0)
+            Position = state and UDim2.new(1, -8, 0.5, 0) or UDim2.new(0, 8, 0.5, 0)
         }):Play()
         TweenService:Create(trackF, TweenInfo.new(0.15), {
             BackgroundColor3 = state and ON_C or OFF_C
@@ -324,18 +308,18 @@ local function makeSwitch(holder, x, default, callback)
 end
 
 local function Toggle(parent, label, default, callback)
-    local h = makeRow(parent, 22)
+    local h = makeRow(parent, 20)
     makeLabel(h, label)
     return h, makeSwitch(h, LABEL_W + GAP, default, callback)
 end
 
-local SLIDER_X = LABEL_W + GAP + SWITCH_W + 10
-local SLIDER_W = 90
+local SLIDER_X = LABEL_W + GAP + SWITCH_W + 8
+local SLIDER_W = 110
 
 local function Slider(parent, label, default, min, max, onChange, onToggle)
     min = min or 0; max = max or 100
     local pct = math.clamp((default - min) / (max - min), 0, 1)
-    local h = makeRow(parent, 22)
+    local h = makeRow(parent, 20)
     local lbl = makeLabel(h, label .. ": " .. default)
     makeSwitch(h, LABEL_W + GAP, false, onToggle)
 
@@ -366,10 +350,6 @@ local function Slider(parent, label, default, min, max, onChange, onToggle)
     knob.Size = UDim2.new(0, 10, 0, 10)
     knob.ZIndex = 6
     corner(knob, 1000)
-    local ks = Instance.new("UIStroke")
-    ks.Thickness = 1.5
-    ks.Color = PINK
-    ks.Parent = knob
 
     local hit = Instance.new("TextButton")
     hit.Parent = h
@@ -410,6 +390,9 @@ local function Slider(parent, label, default, min, max, onChange, onToggle)
     end))
 end
 
+-- ============================================================
+-- DROPDOWN
+-- ============================================================
 local function Dropdown(parent, label, options, default, onChange)
     local h = makeRow(parent, 22)
     makeLabel(h, label)
@@ -418,26 +401,26 @@ local function Dropdown(parent, label, options, default, onChange)
     btn.Parent = h
     btn.AnchorPoint = Vector2.new(1, 0.5)
     btn.Position = UDim2.new(1, -2, 0.5, 0)
-    btn.Size = UDim2.new(0, 90, 1, 0)
+    btn.Size = UDim2.new(0, 110, 1, 0)
     btn.BackgroundColor3 = BG_ROW
     btn.BorderSizePixel = 0
     btn.AutoButtonColor = false
     btn.Font = FONT
     btn.Text = default .. "  v"
     btn.TextColor3 = TEXT
-    btn.TextSize = 13
+    btn.TextSize = 12
     btn.ZIndex = 4
-    corner(btn, 8)
-    stroke(btn, STROKE, 1, 0.2)
+    corner(btn, 6)
+    stroke(btn, STROKE, 1, 0.3)
 
     local list = Instance.new("Frame")
     list.Parent = parent
-    list.BackgroundColor3 = Color3.fromRGB(18, 0, 0)
+    list.BackgroundColor3 = BG_LIST
     list.BorderSizePixel = 0
     list.Size = UDim2.new(1, -4, 0, #options * 20 + 8)
     list.Visible = false
     list.ZIndex = 20
-    corner(list, 8)
+    corner(list, 6)
     stroke(list, STROKE_HI, 1, 0.2)
 
     local lLayout = Instance.new("UIListLayout")
@@ -470,15 +453,16 @@ local function Dropdown(parent, label, options, default, onChange)
         local optBtn = Instance.new("TextButton")
         optBtn.Parent = list
         optBtn.BackgroundColor3 = BG_ROW
+        optBtn.BackgroundTransparency = 0
         optBtn.BorderSizePixel = 0
         optBtn.AutoButtonColor = false
         optBtn.Size = UDim2.new(1, 0, 0, 18)
         optBtn.Font = FONT
         optBtn.Text = opt
         optBtn.TextColor3 = TEXT
-        optBtn.TextSize = 13
+        optBtn.TextSize = 12
         optBtn.ZIndex = 21
-        corner(optBtn, 6)
+        corner(optBtn, 4)
 
         optBtn.MouseEnter:Connect(function() optBtn.BackgroundColor3 = Color3.fromRGB(62, 5, 15) end)
         optBtn.MouseLeave:Connect(function() optBtn.BackgroundColor3 = BG_ROW end)
@@ -509,19 +493,32 @@ end
 
 -- ============================================================
 -- STATE
+-- Hit % locked at 100. Prediction locked ON.
+-- All toggles default ON except Visible Check.
 -- ============================================================
 local settings = {
-    SilentEnabled      = true,
-    SilentRoleCheck    = false,           -- NEW: filter to murderers/sheriffs only
-    SilentTargetPart   = "Head",
-    SilentFOV          = 120,
-    SilentVisibleCheck = false,
-    SilentShowFOV      = true,
-    SilentPredictionX  = 1.60,
-    SilentPredictionY  = 1.50,
+    SilentEnabled        = true,   -- ON at startup
+    SilentTargetPart     = "Head",
+    SilentFOV            = 120,
+    SilentHitChance      = 100,    -- locked
+    SilentVisibleCheck   = false,  -- OFF at startup
+    SilentShowFOV        = true,   -- ON at startup
+    SilentPrediction     = true,   -- locked ON
+    SilentPredictionX    = 1.65,
+    SilentPredictionY    = 1.50,
+    SilentPingCompensate = true,   -- ON at startup
 }
 _G.N3X_Settings = settings
 
+-- Aim is active whenever Enable is on — no key required.
+local function isAimActive()
+    return settings.SilentEnabled
+end
+_G.N3X_IsAimActive = isAimActive
+
+-- ============================================================
+-- TARGET PART RESOLVER
+-- ============================================================
 local function resolveTargetPartSilent(char)
     if not char then return nil end
     local w = settings.SilentTargetPart
@@ -543,61 +540,6 @@ local function resolveTargetPartSilent(char)
         return best
     end
     return char:FindFirstChild(w) or char:FindFirstChild("Head") or char:FindFirstChild("HumanoidRootPart")
-end
-
--- ============================================================
--- ROLE DETECTION
--- ============================================================
-local function getPlayerRole(plr)
-    if not plr then return "Innocent" end
-    if _G.N3X_Roles and _G.N3X_Roles[plr] then
-        return _G.N3X_Roles[plr]
-    end
-
-    local attr = plr:GetAttribute("Role") or plr:GetAttribute("role")
-    if type(attr) == "string" then
-        local a = attr:lower()
-        if a:find("murder") then return "Murderer" end
-        if a:find("sheriff") then return "Sheriff" end
-        if a:find("innocent") then return "Innocent" end
-    end
-
-    local ls = plr:FindFirstChild("leaderstats")
-    if ls then
-        for _, v in ipairs(ls:GetChildren()) do
-            if v:IsA("StringValue") and v.Name:lower():find("role") then
-                local a = v.Value:lower()
-                if a:find("murder") then return "Murderer" end
-                if a:find("sheriff") then return "Sheriff" end
-                if a:find("innocent") then return "Innocent" end
-            end
-        end
-    end
-
-    local containers = {}
-    if plr.Character then table.insert(containers, plr.Character) end
-    local bp = plr:FindFirstChild("Backpack")
-    if bp then table.insert(containers, bp) end
-    for _, c in ipairs(containers) do
-        for _, t in ipairs(c:GetChildren()) do
-            if t:IsA("Tool") then
-                local n = t.Name:lower()
-                if n:find("knife") then return "Murderer" end
-                if n:find("gun") or n:find("pistol") or n:find("revolver") then
-                    return "Sheriff"
-                end
-            end
-        end
-    end
-
-    return "Innocent"
-end
-
--- When Role Check is on, only target murderers and sheriffs
-local function passesRoleCheck(plr)
-    if not settings.SilentRoleCheck then return true end
-    local r = getPlayerRole(plr)
-    return r == "Murderer" or r == "Sheriff"
 end
 
 -- ============================================================
@@ -634,18 +576,21 @@ local function predictPosition(part, predictionX, predictionY, pingCompensate)
     return predicted
 end
 
-local function getAimPosition(part)
+local function getAimPosition(part, aimSettings)
     if not part then return nil end
+    if not aimSettings.PredictionEnabled then
+        return part.Position
+    end
     return predictPosition(
         part,
-        settings.SilentPredictionX,
-        settings.SilentPredictionY,
-        true
+        aimSettings.PredictionX,
+        aimSettings.PredictionY,
+        aimSettings.PingCompensate
     ) or part.Position
 end
 
 -- ============================================================
--- SILENT AIM — MM2 Mouse.Hit Hook
+-- SILENT AIM — MM2 Mouse.Hit Hook (auto-active while Enable is ON)
 -- ============================================================
 do
     local mouse = player:GetMouse()
@@ -673,33 +618,18 @@ do
         return hit.Instance and hit.Instance:IsDescendantOf(plr.Character)
     end
 
-    -- Target selection:
-    --  - If SilentRoleCheck is ON: only murderers/sheriffs are eligible.
-    --  - Otherwise: everyone is eligible, but murderers/sheriffs get a
-    --    small 15% priority boost so they win at similar distances.
     local function closest()
         local mouseLoc = UserInputService:GetMouseLocation()
-        local best, bestScore = nil, math.huge
+        local best, bestD = nil, math.huge
         for _, p in ipairs(Players:GetPlayers()) do
             if p ~= player and alive(p) then
-                if passesRoleCheck(p) then
-                    local pt = resolveTargetPartSilent(p.Character)
-                    if pt then
-                        local sp, on = camera:WorldToViewportPoint(pt.Position)
-                        if on then
-                            local d = (Vector2.new(sp.X, sp.Y) - mouseLoc).Magnitude
-                            if d <= settings.SilentFOV and visible(p, pt) then
-                                local score = d
-                                if not settings.SilentRoleCheck then
-                                    local role = getPlayerRole(p)
-                                    if role == "Murderer" or role == "Sheriff" then
-                                        score = score * 0.85
-                                    end
-                                end
-                                if score < bestScore then
-                                    best, bestScore = pt, score
-                                end
-                            end
+                local pt = resolveTargetPartSilent(p.Character)
+                if pt then
+                    local sp, on = camera:WorldToViewportPoint(pt.Position)
+                    if on then
+                        local d = (Vector2.new(sp.X, sp.Y) - mouseLoc).Magnitude
+                        if d <= settings.SilentFOV and d < bestD and visible(p, pt) then
+                            best, bestD = pt, d
                         end
                     end
                 end
@@ -708,20 +638,29 @@ do
         return best
     end
 
+    -- Hook Mouse's metatable __index — MM2 reads mouse.Hit for aim direction.
     pcall(function()
         local mt = getrawmetatable and getrawmetatable(game)
         if mt and setreadonly and hookfunction and checkcaller and newcclosure then
             local oldIndex = mt.__index
             setreadonly(mt, false)
             mt.__index = newcclosure(function(self, key)
-                if self == mouse
+                -- Aim only when Enable is on
+                if isAimActive()
+                    and self == mouse
                     and (key == "Hit" or key == "Target" or key == "UnitRay")
                     and not checkcaller() then
 
-                    if settings.SilentEnabled then
+                    -- Hit % locked at 100 → always passes
+                    if math.random(1, 100) <= settings.SilentHitChance then
                         local t = closest()
                         if t then
-                            local aimPos = getAimPosition(t) or t.Position
+                            local aimPos = getAimPosition(t, {
+                                PredictionEnabled = settings.SilentPrediction,
+                                PredictionX       = settings.SilentPredictionX,
+                                PredictionY       = settings.SilentPredictionY,
+                                PingCompensate    = settings.SilentPingCompensate,
+                            }) or t.Position
 
                             if key == "Hit" then
                                 return CFrame.new(aimPos)
@@ -739,9 +678,11 @@ do
             end)
             setreadonly(mt, true)
         else
-            warn("[N3X aimlabs] Silent Aim: executor lacks getrawmetatable/hookfunction.")
+            warn("[N3X] Silent Aim: your executor doesn't support metatable hooks (getrawmetatable / hookfunction). Silent Aim will not work.")
         end
     end)
+
+    _G.N3X_SilentAim = { setEnabled = function(on) settings.SilentEnabled = on == true end }
 end
 
 -- ============================================================
@@ -762,16 +703,21 @@ do
     local sc = makeScroll(SilentPage)
     Section(sc, "SILENT AIM"); Divider(sc)
 
-    Toggle(sc, "Enable Silent Aim", true, function(on)
+    Toggle(sc, "Enable", true, function(on)
         settings.SilentEnabled = on
-    end)
-    Toggle(sc, "Role Check", false, function(on)
-        settings.SilentRoleCheck = on
+        if _G.N3X_SilentAim then _G.N3X_SilentAim.setEnabled(on) end
     end)
     Toggle(sc, "Show FOV Circle", true, function(on) settings.SilentShowFOV = on end)
 
     Divider(sc)
     Slider(sc, "FOV", 120, 5, 600, function(v) settings.SilentFOV = v end)
+
+    Divider(sc)
+    Section(sc, "PREDICTION (LOCKED ON)"); Divider(sc)
+
+    Toggle(sc, "Ping Compensate", true, function(on) settings.SilentPingCompensate = on end)
+    Slider(sc, "Predict X %", 165, 0, 300, function(v) settings.SilentPredictionX = v / 100 end)
+    Slider(sc, "Predict Y %", 150, 0, 300, function(v) settings.SilentPredictionY = v / 100 end)
 
     Divider(sc)
     Section(sc, "TARGET"); Divider(sc)
@@ -784,37 +730,48 @@ do
     Section(sc, "CHECKS"); Divider(sc)
 
     Toggle(sc, "Visible Check", false, function(on) settings.SilentVisibleCheck = on end)
+
+    Divider(sc)
+    Section(sc, "INFO"); Divider(sc)
+
+    local infoRow = makeRow(sc, 34)
+    local infoLabel = Instance.new("TextLabel")
+    infoLabel.Parent = infoRow
+    infoLabel.BackgroundTransparency = 1
+    infoLabel.Size = UDim2.new(1, 0, 1, 0)
+    infoLabel.Font = FONT
+    infoLabel.Text = "Silent aim is always active while Enable is ON.\nHit % = 100 (locked). Prediction = ON (locked)."
+    infoLabel.TextColor3 = TEXT_MUT
+    infoLabel.TextSize = 11
+    infoLabel.TextXAlignment = Enum.TextXAlignment.Left
+    infoLabel.TextYAlignment = Enum.TextYAlignment.Top
+    infoLabel.ZIndex = 4
 end
 
 -- ============================================================
--- FLOATING OPEN BUTTON
+-- OPEN / CLOSE
 -- ============================================================
 local ToggleButton = Instance.new("TextButton")
 ToggleButton.Parent = ScreenGui
 ToggleButton.Position = UDim2.new(0, 20, 0, 20)
-ToggleButton.Size = UDim2.new(0, 46, 0, 46)
-ToggleButton.BackgroundColor3 = DARK
+ToggleButton.Size = UDim2.new(0, 42, 0, 42)
+ToggleButton.BackgroundColor3 = BG_HDR
 ToggleButton.BorderSizePixel = 0
 ToggleButton.AutoButtonColor = false
-ToggleButton.Font = FONT
+ToggleButton.Font = Enum.Font.GothamBold
 ToggleButton.Text = "N3X"
 ToggleButton.TextColor3 = PINK
-ToggleButton.TextSize = 13
+ToggleButton.TextSize = 12
 ToggleButton.ZIndex = 50
 ToggleButton.Active = true
-corner(ToggleButton, 14)
-
-local toggleStroke = Instance.new("UIStroke")
-toggleStroke.Color = PINK
-toggleStroke.Thickness = 1.5
-toggleStroke.Transparency = 0.2
-toggleStroke.Parent = ToggleButton
+corner(ToggleButton, 10)
+stroke(ToggleButton, STROKE_HI, 1, 0.3)
 
 ToggleButton.MouseEnter:Connect(function()
-    TweenService:Create(ToggleButton, TweenInfo.new(0.12), { BackgroundColor3 = Color3.fromRGB(60, 5, 15) }):Play()
+    TweenService:Create(ToggleButton, TweenInfo.new(0.12), { BackgroundColor3 = Color3.fromRGB(62, 5, 15) }):Play()
 end)
 ToggleButton.MouseLeave:Connect(function()
-    TweenService:Create(ToggleButton, TweenInfo.new(0.12), { BackgroundColor3 = DARK }):Play()
+    TweenService:Create(ToggleButton, TweenInfo.new(0.12), { BackgroundColor3 = BG_HDR }):Play()
 end)
 ToggleButton.MouseButton1Click:Connect(function()
     Frame.Visible = not Frame.Visible
@@ -827,33 +784,8 @@ keep(UserInputService.InputBegan:Connect(function(input, gp)
     end
 end))
 
--- Draggable floating button
-local toggleDragging, toggleDragStart, toggleStartPos = false, nil, nil
-ToggleButton.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        toggleDragging = true
-        toggleDragStart = input.Position
-        toggleStartPos = ToggleButton.Position
-    end
-end)
-keep(UserInputService.InputChanged:Connect(function(input)
-    if toggleDragging and toggleDragStart
-        and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local d = input.Position - toggleDragStart
-        ToggleButton.Position = UDim2.new(
-            toggleStartPos.X.Scale, toggleStartPos.X.Offset + d.X,
-            toggleStartPos.Y.Scale, toggleStartPos.Y.Offset + d.Y
-        )
-    end
-end))
-keep(UserInputService.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        toggleDragging = false
-    end
-end))
-
 -- ============================================================
--- DRAG (frame via header)
+-- DRAG
 -- ============================================================
 local dragging, dragStart, startPos = false, nil, nil
 keep(Header.InputBegan:Connect(function(i)
@@ -876,4 +808,7 @@ keep(UserInputService.InputEnded:Connect(function(i)
     end
 end))
 
-print("[N3X aimlabs] Silent Aim loaded — role check toggle added.")
+print("[N3X] Silent Aim GUI loaded — re-executing will NOT remove it.")
+print("[N3X] Silent aim is ALWAYS active while Enable is ON — no key required.")
+print("[N3X] Hit % locked at 100. Prediction locked ON.")
+print("[N3X] If Silent Aim doesn't work, your executor lacks getrawmetatable/hookfunction.")
