@@ -1,7 +1,7 @@
 -- ============================================================
 -- Silent Aim — clean minimal panel
--- Dark red theme. Mobile-optimized.
--- Drag ONLY through the top strip (top edge → divider under "SILENT AIM")
+-- Dark red theme. Mobile-optimized. Reliable drag.
+-- Open/close button at top-center of screen.
 -- ============================================================
 
 local Players          = game:GetService("Players")
@@ -44,7 +44,7 @@ do
 end
 
 -- ============================================================
--- THEME
+-- THEME — dark red, muted, no vibrant colors
 -- ============================================================
 local BG        = Color3.fromRGB(22, 8, 12)
 local BG_PANEL  = Color3.fromRGB(30, 12, 18)
@@ -151,9 +151,6 @@ local LABEL_W     = isMobile and 108 or 118
 local SLIDER_W    = isMobile and 76  or 90
 local GAP         = 8
 
--- Height of the draggable top strip (from very top of panel down to just past the divider)
-local DRAG_HANDLE_H = isMobile and 52 or 44
-
 -- ============================================================
 -- MAIN PANEL
 -- ============================================================
@@ -180,21 +177,7 @@ innerStroke.Transparency = 0.6
 innerStroke.Parent = Frame
 
 -- ============================================================
--- DRAG HANDLE — invisible strip at the top of the panel
--- Sits on top of the header area; only this captures drags.
--- ============================================================
-local DragHandle = Instance.new("Frame")
-DragHandle.Name = "DragHandle"
-DragHandle.Parent = Frame
-DragHandle.BackgroundTransparency = 1
-DragHandle.BorderSizePixel = 0
-DragHandle.Position = UDim2.new(0, 0, 0, 0)
-DragHandle.Size = UDim2.new(1, 0, 0, DRAG_HANDLE_H)
-DragHandle.ZIndex = 15
-DragHandle.Active = true
-
--- ============================================================
--- CONTENT HOLDER — offset down so the section text starts below the handle
+-- CONTENT HOLDER
 -- ============================================================
 local Content = Instance.new("Frame")
 Content.Parent = Frame
@@ -218,6 +201,8 @@ local function makeScroll(parent)
     sf.ScrollBarThickness = 2
     sf.ScrollBarImageColor3 = ACCENT_D
     sf.ZIndex = 4
+    -- ScrollingFrame shouldn't eat drags on mobile; the drag listener handles this globally
+    sf.ScrollingEnabled = true
     local l = Instance.new("UIListLayout")
     l.Padding = UDim.new(0, isMobile and 10 or 8)
     l.SortOrder = Enum.SortOrder.LayoutOrder
@@ -1020,12 +1005,25 @@ keep(UserInputService.InputBegan:Connect(function(input, gp)
 end))
 
 -- ============================================================
--- DRAG — ONLY via the top strip (DragHandle)
+-- DRAG — global listener, works on mobile + PC reliably
 -- ============================================================
-local function pointInsideDragHandle(pos)
+-- A control is "interactive" if it's a button/textbox. Those block drags.
+-- Everything else (labels, frames, dividers, section headers, empty space,
+-- even the ScrollingFrame background) allows dragging.
+local function isInteractive(gui)
+    while gui do
+        if gui:IsA("TextButton") or gui:IsA("ImageButton") or gui:IsA("TextBox") then
+            return true
+        end
+        gui = gui.Parent
+    end
+    return false
+end
+
+local function pointInsideFrame(pos)
     if not Frame.Visible then return false end
-    local ap = DragHandle.AbsolutePosition
-    local as = DragHandle.AbsoluteSize
+    local ap = Frame.AbsolutePosition
+    local as = Frame.AbsoluteSize
     return pos.X >= ap.X and pos.X <= ap.X + as.X
        and pos.Y >= ap.Y and pos.Y <= ap.Y + as.Y
 end
@@ -1038,7 +1036,7 @@ local dragState = {
     moveConn = nil,
     endConn = nil,
 }
-local DRAG_DEADZONE = 4
+local DRAG_DEADZONE = 6
 
 local function stopDrag()
     dragState.active = false
@@ -1055,8 +1053,17 @@ keep(UserInputService.InputBegan:Connect(function(input, gp)
     if not Frame.Visible then return end
 
     local pos = input.Position
-    if not pointInsideDragHandle(pos) then return end
+    if not pointInsideFrame(pos) then return end
 
+    -- Check what GUI element is under the pointer
+    local hits = playerGui:GetGuiObjectsAtPosition(pos.X, pos.Y)
+    for _, h in ipairs(hits) do
+        if h:IsDescendantOf(Frame) and isInteractive(h) then
+            return
+        end
+    end
+
+    -- Start a pending drag
     dragState.pending = true
     dragState.active = false
     dragState.startInput = pos
