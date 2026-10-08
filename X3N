@@ -1,6 +1,7 @@
 -- ============================================================
 -- Silent Aim — clean minimal panel
--- Dark red theme, no logo, no title, single section.
+-- Dark red theme. Mobile-optimized.
+-- Drag ONLY through the top strip (top edge → divider under "SILENT AIM")
 -- ============================================================
 
 local Players          = game:GetService("Players")
@@ -22,6 +23,8 @@ do
         existing.DisplayOrder = 999
         local mainFrame = existing:FindFirstChild("MainFrame")
         if mainFrame then mainFrame.Visible = true end
+        local topBtn = existing:FindFirstChild("OpenClose")
+        if topBtn then topBtn.Visible = true end
         warn("[Silent Aim] GUI already loaded — keeping existing instance.")
         return
     end
@@ -31,7 +34,17 @@ local connections = {}
 local function keep(c) table.insert(connections, c); return c end
 
 -- ============================================================
--- THEME — dark red, muted, no vibrant colors
+-- DEVICE DETECTION
+-- ============================================================
+local isMobile = UserInputService.TouchEnabled and not UserInputService.MouseEnabled
+local isSmallScreen = false
+do
+    local vp = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1920, 1080)
+    isSmallScreen = vp.X < 900 or vp.Y < 600
+end
+
+-- ============================================================
+-- THEME
 -- ============================================================
 local BG        = Color3.fromRGB(22, 8, 12)
 local BG_PANEL  = Color3.fromRGB(30, 12, 18)
@@ -79,7 +92,7 @@ ScreenGui.IgnoreGuiInset = true
 ScreenGui.DisplayOrder = 999
 
 -- ============================================================
--- FOV CIRCLE (functional, not shown as a toggle row)
+-- FOV CIRCLE
 -- ============================================================
 local FovCircle = Instance.new("Frame")
 FovCircle.Name = "FovCircle"
@@ -116,7 +129,33 @@ keep(RunService.RenderStepped:Connect(function()
 end))
 
 -- ============================================================
--- MAIN PANEL (no header — clean content only)
+-- RESPONSIVE PANEL SIZE
+-- ============================================================
+local PANEL_W, PANEL_H
+if isMobile then
+    local vp = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(800, 600)
+    PANEL_W = math.clamp(vp.X * 0.78, 260, 340)
+    PANEL_H = math.clamp(vp.Y * 0.55, 260, 380)
+elseif isSmallScreen then
+    PANEL_W = 300
+    PANEL_H = 330
+else
+    PANEL_W = 310
+    PANEL_H = 350
+end
+
+local ROW_H       = isMobile and 30 or 24
+local SWITCH_W    = isMobile and 44 or 38
+local SWITCH_H    = isMobile and 24 or 20
+local LABEL_W     = isMobile and 108 or 118
+local SLIDER_W    = isMobile and 76  or 90
+local GAP         = 8
+
+-- Height of the draggable top strip (from very top of panel down to just past the divider)
+local DRAG_HANDLE_H = isMobile and 52 or 44
+
+-- ============================================================
+-- MAIN PANEL
 -- ============================================================
 local Frame = Instance.new("Frame")
 Frame.Name = "MainFrame"
@@ -125,15 +164,15 @@ Frame.BackgroundColor3 = BG
 Frame.BackgroundTransparency = BG_T
 Frame.BorderSizePixel = 0
 Frame.AnchorPoint = Vector2.new(0.5, 0.5)
-Frame.Position = UDim2.new(0.5, 0, 0.5, 0)
-Frame.Size = UDim2.new(0, 340, 0, 400)
+Frame.Position = isMobile and UDim2.new(0.5, 0, 0.55, 0) or UDim2.new(0.5, 0, 0.5, 0)
+Frame.Size = UDim2.new(0, PANEL_W, 0, PANEL_H)
 Frame.Active = true
 Frame.Visible = true
 Frame.ZIndex = 1
+Frame.ClipsDescendants = false
 corner(Frame, 10)
 stroke(Frame, STROKE_HI, 1, 0.35)
 
--- subtle inner highlight border
 local innerStroke = Instance.new("UIStroke")
 innerStroke.Color = Color3.fromRGB(70, 26, 38)
 innerStroke.Thickness = 1
@@ -141,7 +180,21 @@ innerStroke.Transparency = 0.6
 innerStroke.Parent = Frame
 
 -- ============================================================
--- CONTENT HOLDER
+-- DRAG HANDLE — invisible strip at the top of the panel
+-- Sits on top of the header area; only this captures drags.
+-- ============================================================
+local DragHandle = Instance.new("Frame")
+DragHandle.Name = "DragHandle"
+DragHandle.Parent = Frame
+DragHandle.BackgroundTransparency = 1
+DragHandle.BorderSizePixel = 0
+DragHandle.Position = UDim2.new(0, 0, 0, 0)
+DragHandle.Size = UDim2.new(1, 0, 0, DRAG_HANDLE_H)
+DragHandle.ZIndex = 15
+DragHandle.Active = true
+
+-- ============================================================
+-- CONTENT HOLDER — offset down so the section text starts below the handle
 -- ============================================================
 local Content = Instance.new("Frame")
 Content.Parent = Frame
@@ -158,15 +211,15 @@ local function makeScroll(parent)
     sf.Parent = parent
     sf.BackgroundTransparency = 1
     sf.BorderSizePixel = 0
-    sf.Position = UDim2.new(0, 16, 0, 18)
-    sf.Size = UDim2.new(1, -28, 1, -34)
+    sf.Position = UDim2.new(0, 14, 0, 14)
+    sf.Size = UDim2.new(1, -24, 1, -26)
     sf.CanvasSize = UDim2.new(0, 0, 0, 0)
     sf.AutomaticCanvasSize = Enum.AutomaticSize.Y
     sf.ScrollBarThickness = 2
     sf.ScrollBarImageColor3 = ACCENT_D
     sf.ZIndex = 4
     local l = Instance.new("UIListLayout")
-    l.Padding = UDim.new(0, 8)
+    l.Padding = UDim.new(0, isMobile and 10 or 8)
     l.SortOrder = Enum.SortOrder.LayoutOrder
     l.Parent = sf
     return sf
@@ -176,11 +229,11 @@ local function Section(parent, text)
     local l = Instance.new("TextLabel")
     l.Parent = parent
     l.BackgroundTransparency = 1
-    l.Size = UDim2.new(1, 0, 0, 20)
+    l.Size = UDim2.new(1, 0, 0, isMobile and 22 or 20)
     l.Font = FONT_B
     l.Text = string.upper(text)
     l.TextColor3 = ACCENT
-    l.TextSize = 13
+    l.TextSize = isMobile and 14 or 13
     l.TextXAlignment = Enum.TextXAlignment.Left
     l.TextYAlignment = Enum.TextYAlignment.Center
     l.ZIndex = 4
@@ -201,16 +254,11 @@ local function Divider(parent)
     d.ZIndex = 4
 end
 
-local LABEL_W  = 118
-local GAP      = 8
-local SWITCH_W = 38
-local SWITCH_H = 20
-
 local function makeRow(parent, h)
     local f = Instance.new("Frame")
     f.Parent = parent
     f.BackgroundTransparency = 1
-    f.Size = UDim2.new(1, 0, 0, h)
+    f.Size = UDim2.new(1, 0, 0, h or ROW_H)
     f.ZIndex = 4
     return f
 end
@@ -223,7 +271,7 @@ local function makeLabel(holder, text)
     lbl.Font = FONT
     lbl.Text = text
     lbl.TextColor3 = TEXT
-    lbl.TextSize = 15
+    lbl.TextSize = isMobile and 16 or 15
     lbl.TextXAlignment = Enum.TextXAlignment.Left
     lbl.TextYAlignment = Enum.TextYAlignment.Center
     lbl.TextTruncate = Enum.TextTruncate.AtEnd
@@ -236,7 +284,6 @@ local function makeLabel(holder, text)
     return lbl
 end
 
--- Fully rounded toggle
 local function makeSwitch(holder, x, default, callback)
     local trackF = Instance.new("Frame")
     trackF.Parent = holder
@@ -296,18 +343,17 @@ local function makeSwitch(holder, x, default, callback)
 end
 
 local function Toggle(parent, label, default, callback)
-    local h = makeRow(parent, 24)
+    local h = makeRow(parent, ROW_H)
     makeLabel(h, label)
     return h, makeSwitch(h, LABEL_W + GAP, default, callback)
 end
 
 local SLIDER_X = LABEL_W + GAP + SWITCH_W + 10
-local SLIDER_W = 90
 
 local function Slider(parent, label, default, min, max, onChange, onToggle)
     min = min or 0; max = max or 100
     local pct = math.clamp((default - min) / (max - min), 0, 1)
-    local h = makeRow(parent, 24)
+    local h = makeRow(parent, ROW_H)
     local lbl = makeLabel(h, label .. ": " .. default)
     makeSwitch(h, LABEL_W + GAP, false, onToggle)
 
@@ -317,7 +363,7 @@ local function Slider(parent, label, default, min, max, onChange, onToggle)
     trackF.BackgroundColor3 = Color3.fromRGB(40, 16, 24)
     trackF.BorderSizePixel = 0
     trackF.Position = UDim2.new(0, SLIDER_X, 0.5, 0)
-    trackF.Size = UDim2.new(0, SLIDER_W, 0, 5)
+    trackF.Size = UDim2.new(0, SLIDER_W, 0, isMobile and 6 or 5)
     trackF.ZIndex = 4
     corner(trackF, 1000)
     local ts = Instance.new("UIStroke")
@@ -340,7 +386,7 @@ local function Slider(parent, label, default, min, max, onChange, onToggle)
     knob.BackgroundColor3 = KNOB
     knob.BorderSizePixel = 0
     knob.Position = UDim2.new(pct, 0, 0.5, 0)
-    knob.Size = UDim2.new(0, 12, 0, 12)
+    knob.Size = UDim2.new(0, isMobile and 16 or 12, 0, isMobile and 16 or 12)
     knob.ZIndex = 6
     corner(knob, 1000)
     local ks = Instance.new("UIStroke")
@@ -354,8 +400,8 @@ local function Slider(parent, label, default, min, max, onChange, onToggle)
     hit.BackgroundTransparency = 1
     hit.Text = ""
     hit.AutoButtonColor = false
-    hit.Position = UDim2.new(0, SLIDER_X - 5, 0, 0)
-    hit.Size = UDim2.new(0, SLIDER_W + 10, 1, 0)
+    hit.Position = UDim2.new(0, SLIDER_X - 8, 0, 0)
+    hit.Size = UDim2.new(0, SLIDER_W + 16, 1, 0)
     hit.ZIndex = 7
 
     local dragging = false
@@ -392,21 +438,21 @@ end
 -- KEYBIND PICKER
 -- ============================================================
 local function KeybindRow(parent, label, getKey, setKey)
-    local h = makeRow(parent, 24)
+    local h = makeRow(parent, ROW_H)
     makeLabel(h, label)
 
     local btn = Instance.new("TextButton")
     btn.Parent = h
     btn.AnchorPoint = Vector2.new(1, 0.5)
     btn.Position = UDim2.new(1, -2, 0.5, 0)
-    btn.Size = UDim2.new(0, 100, 1, 0)
+    btn.Size = UDim2.new(0, isMobile and 96 or 100, 1, 0)
     btn.BackgroundColor3 = BG_ROW
     btn.BorderSizePixel = 0
     btn.AutoButtonColor = false
     btn.Font = FONT
     btn.Text = tostring(getKey()):gsub("Enum.KeyCode.", ""):gsub("Enum.UserInputType.", "")
     btn.TextColor3 = TEXT
-    btn.TextSize = 14
+    btn.TextSize = isMobile and 15 or 14
     btn.ZIndex = 4
     corner(btn, 6)
     stroke(btn, STROKE, 1, 0.3)
@@ -466,21 +512,21 @@ end
 -- DROPDOWN
 -- ============================================================
 local function Dropdown(parent, label, options, default, onChange)
-    local h = makeRow(parent, 24)
+    local h = makeRow(parent, ROW_H)
     makeLabel(h, label)
 
     local btn = Instance.new("TextButton")
     btn.Parent = h
     btn.AnchorPoint = Vector2.new(1, 0.5)
     btn.Position = UDim2.new(1, -2, 0.5, 0)
-    btn.Size = UDim2.new(0, 100, 1, 0)
+    btn.Size = UDim2.new(0, isMobile and 96 or 100, 1, 0)
     btn.BackgroundColor3 = BG_ROW
     btn.BorderSizePixel = 0
     btn.AutoButtonColor = false
     btn.Font = FONT
     btn.Text = default .. "  v"
     btn.TextColor3 = TEXT
-    btn.TextSize = 14
+    btn.TextSize = isMobile and 15 or 14
     btn.ZIndex = 4
     corner(btn, 6)
     stroke(btn, STROKE, 1, 0.3)
@@ -489,7 +535,7 @@ local function Dropdown(parent, label, options, default, onChange)
     list.Parent = parent
     list.BackgroundColor3 = BG_PANEL
     list.BorderSizePixel = 0
-    list.Size = UDim2.new(1, -4, 0, #options * 22 + 8)
+    list.Size = UDim2.new(1, -4, 0, #options * (isMobile and 26 or 22) + 8)
     list.Visible = false
     list.ZIndex = 20
     corner(list, 6)
@@ -527,11 +573,11 @@ local function Dropdown(parent, label, options, default, onChange)
         optBtn.BackgroundColor3 = BG_ROW
         optBtn.BorderSizePixel = 0
         optBtn.AutoButtonColor = false
-        optBtn.Size = UDim2.new(1, 0, 0, 20)
+        optBtn.Size = UDim2.new(1, 0, 0, isMobile and 24 or 20)
         optBtn.Font = FONT
         optBtn.Text = opt
         optBtn.TextColor3 = TEXT
-        optBtn.TextSize = 14
+        optBtn.TextSize = isMobile and 15 or 14
         optBtn.ZIndex = 21
         corner(optBtn, 4)
 
@@ -826,25 +872,103 @@ do
 end
 
 -- ============================================================
--- OPEN / CLOSE BUTTON (top-left, small, minimal)
+-- CUTE SCREEN EFFECTS
 -- ============================================================
+local function playBloom()
+    local bloom = Instance.new("Frame")
+    bloom.Name = "Bloom"
+    bloom.Parent = ScreenGui
+    bloom.AnchorPoint = Vector2.new(0.5, 0.5)
+    bloom.Position = Frame.Position
+    bloom.Size = UDim2.new(0, 40, 0, 40)
+    bloom.BackgroundColor3 = ACCENT
+    bloom.BackgroundTransparency = 0.55
+    bloom.BorderSizePixel = 0
+    bloom.ZIndex = 40
+    corner(bloom, 1000)
+
+    local bStroke = Instance.new("UIStroke")
+    bStroke.Color = STROKE_HI
+    bStroke.Thickness = 2
+    bStroke.Transparency = 0.4
+    bStroke.Parent = bloom
+
+    TweenService:Create(bloom, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+        Size = UDim2.new(0, 260, 0, 260),
+        BackgroundTransparency = 1,
+        Rotation = 90,
+    }):Play()
+    TweenService:Create(bStroke, TweenInfo.new(0.55, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+        Transparency = 1,
+        Thickness = 0,
+    }):Play()
+
+    task.delay(0.6, function()
+        if bloom then bloom:Destroy() end
+    end)
+end
+
+local function playShimmer()
+    local shimmer = Instance.new("Frame")
+    shimmer.Name = "Shimmer"
+    shimmer.Parent = ScreenGui
+    shimmer.AnchorPoint = Vector2.new(0.5, 0.5)
+    shimmer.Position = Frame.Position
+    shimmer.Size = UDim2.new(0, 220, 0, 220)
+    shimmer.BackgroundColor3 = ACCENT_D
+    shimmer.BackgroundTransparency = 1
+    shimmer.BorderSizePixel = 0
+    shimmer.ZIndex = 40
+    corner(shimmer, 1000)
+
+    local sStroke = Instance.new("UIStroke")
+    sStroke.Color = STROKE_HI
+    sStroke.Thickness = 2
+    sStroke.Transparency = 0.3
+    sStroke.Parent = shimmer
+
+    TweenService:Create(shimmer, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+        Size = UDim2.new(0, 40, 0, 40),
+        BackgroundTransparency = 0.7,
+    }):Play()
+    TweenService:Create(sStroke, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+        Transparency = 1,
+    }):Play()
+
+    task.delay(0.45, function()
+        if shimmer then shimmer:Destroy() end
+    end)
+end
+
+-- ============================================================
+-- OPEN / CLOSE BUTTON — top center of screen
+-- ============================================================
+local BTN_SIZE = isMobile and 44 or 38
+
 local OpenCloseBtn = Instance.new("TextButton")
 OpenCloseBtn.Name = "OpenClose"
 OpenCloseBtn.Parent = ScreenGui
-OpenCloseBtn.Position = UDim2.new(0, 14, 0, 14)
-OpenCloseBtn.Size = UDim2.new(0, 30, 0, 30)
+OpenCloseBtn.AnchorPoint = Vector2.new(0.5, 0)
+OpenCloseBtn.Position = UDim2.new(0.5, 0, 0, isMobile and 14 or 10)
+OpenCloseBtn.Size = UDim2.new(0, BTN_SIZE, 0, BTN_SIZE)
 OpenCloseBtn.BackgroundColor3 = BG_PANEL
-OpenCloseBtn.BackgroundTransparency = 0.1
+OpenCloseBtn.BackgroundTransparency = 0.08
 OpenCloseBtn.BorderSizePixel = 0
 OpenCloseBtn.AutoButtonColor = false
 OpenCloseBtn.Font = Enum.Font.GothamBold
 OpenCloseBtn.Text = "×"
 OpenCloseBtn.TextColor3 = ACCENT
-OpenCloseBtn.TextSize = 18
-OpenCloseBtn.ZIndex = 50
+OpenCloseBtn.TextSize = isMobile and 22 or 18
+OpenCloseBtn.ZIndex = 60
 OpenCloseBtn.Active = true
 corner(OpenCloseBtn, 1000)
-stroke(OpenCloseBtn, STROKE_HI, 1, 0.2)
+stroke(OpenCloseBtn, STROKE_HI, 1, 0.15)
+
+local btnGlow = Instance.new("UIStroke")
+btnGlow.Color = ACCENT_D
+btnGlow.Thickness = 3
+btnGlow.Transparency = 0.75
+btnGlow.Parent = OpenCloseBtn
 
 OpenCloseBtn.MouseEnter:Connect(function()
     TweenService:Create(OpenCloseBtn, TweenInfo.new(0.15), {
@@ -856,62 +980,112 @@ OpenCloseBtn.MouseLeave:Connect(function()
         BackgroundColor3 = BG_PANEL
     }):Play()
 end)
+
+local isOpen = true
+local function setOpen(v)
+    if v == isOpen then return end
+    isOpen = v
+
+    if isOpen then
+        playShimmer()
+        Frame.Visible = true
+        Frame.Size = UDim2.new(0, PANEL_W * 0.9, 0, PANEL_H * 0.9)
+        TweenService:Create(Frame, TweenInfo.new(0.28, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+            Size = UDim2.new(0, PANEL_W, 0, PANEL_H),
+        }):Play()
+        OpenCloseBtn.Text = "×"
+    else
+        playBloom()
+        local t = TweenService:Create(Frame, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+            Size = UDim2.new(0, PANEL_W * 0.85, 0, PANEL_H * 0.85),
+        })
+        t:Play()
+        t.Completed:Connect(function()
+            Frame.Visible = false
+            Frame.Size = UDim2.new(0, PANEL_W, 0, PANEL_H)
+        end)
+        OpenCloseBtn.Text = "◦"
+    end
+end
+
 OpenCloseBtn.MouseButton1Click:Connect(function()
-    Frame.Visible = not Frame.Visible
-    OpenCloseBtn.Text = Frame.Visible and "×" or "◦"
+    setOpen(not isOpen)
 end)
 
 keep(UserInputService.InputBegan:Connect(function(input, gp)
     if gp then return end
     if input.KeyCode == Enum.KeyCode.RightShift then
-        Frame.Visible = not Frame.Visible
-        OpenCloseBtn.Text = Frame.Visible and "×" or "◦"
+        setOpen(not isOpen)
     end
 end))
 
 -- ============================================================
--- DRAG — panel moves when you drag anywhere on its background
+-- DRAG — ONLY via the top strip (DragHandle)
 -- ============================================================
-local dragging, dragStart, startPos = false, nil, nil
-
-local function isInteractive(gui)
-    while gui do
-        if gui:IsA("TextButton") or gui:IsA("ImageButton")
-            or gui:IsA("TextBox") or gui:IsA("ScrollingFrame") then
-            return true
-        end
-        gui = gui.Parent
-    end
-    return false
+local function pointInsideDragHandle(pos)
+    if not Frame.Visible then return false end
+    local ap = DragHandle.AbsolutePosition
+    local as = DragHandle.AbsoluteSize
+    return pos.X >= ap.X and pos.X <= ap.X + as.X
+       and pos.Y >= ap.Y and pos.Y <= ap.Y + as.Y
 end
 
-keep(Frame.InputBegan:Connect(function(i)
-    if i.UserInputType ~= Enum.UserInputType.MouseButton1
-        and i.UserInputType ~= Enum.UserInputType.Touch then return end
-    local hits = playerGui:GetGuiObjectsAtPosition(i.Position.X, i.Position.Y)
-    for _, h in ipairs(hits) do
-        if isInteractive(h) then return end
-    end
-    dragging = true
-    dragStart = i.Position
-    startPos = Frame.Position
-end))
+local dragState = {
+    active = false,
+    pending = false,
+    startInput = nil,
+    startPos = nil,
+    moveConn = nil,
+    endConn = nil,
+}
+local DRAG_DEADZONE = 4
 
-keep(UserInputService.InputChanged:Connect(function(i)
-    if dragging and dragStart and (i.UserInputType == Enum.UserInputType.MouseMovement
-        or i.UserInputType == Enum.UserInputType.Touch) then
-        local d = i.Position - dragStart
-        Frame.Position = UDim2.new(
-            startPos.X.Scale, startPos.X.Offset + d.X,
-            startPos.Y.Scale, startPos.Y.Offset + d.Y)
-    end
-end))
+local function stopDrag()
+    dragState.active = false
+    dragState.pending = false
+    dragState.startInput = nil
+    if dragState.moveConn then dragState.moveConn:Disconnect(); dragState.moveConn = nil end
+    if dragState.endConn then dragState.endConn:Disconnect(); dragState.endConn = nil end
+end
 
-keep(UserInputService.InputEnded:Connect(function(i)
-    if i.UserInputType == Enum.UserInputType.MouseButton1
-        or i.UserInputType == Enum.UserInputType.Touch then
-        dragging = false
-    end
+keep(UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.UserInputType ~= Enum.UserInputType.MouseButton1
+        and input.UserInputType ~= Enum.UserInputType.Touch then return end
+    if not Frame.Visible then return end
+
+    local pos = input.Position
+    if not pointInsideDragHandle(pos) then return end
+
+    dragState.pending = true
+    dragState.active = false
+    dragState.startInput = pos
+    dragState.startPos = Frame.Position
+
+    dragState.moveConn = UserInputService.InputChanged:Connect(function(m)
+        if not dragState.pending and not dragState.active then return end
+        if m.UserInputType ~= Enum.UserInputType.MouseMovement
+            and m.UserInputType ~= Enum.UserInputType.Touch then return end
+        local d = m.Position - dragState.startInput
+        if not dragState.active and d.Magnitude > DRAG_DEADZONE then
+            dragState.active = true
+            dragState.pending = false
+        end
+        if dragState.active then
+            Frame.Position = UDim2.new(
+                dragState.startPos.X.Scale, dragState.startPos.X.Offset + d.X,
+                dragState.startPos.Y.Scale, dragState.startPos.Y.Offset + d.Y)
+        end
+    end)
+    keep(dragState.moveConn)
+
+    dragState.endConn = UserInputService.InputEnded:Connect(function(m)
+        if m.UserInputType == Enum.UserInputType.MouseButton1
+            or m.UserInputType == Enum.UserInputType.Touch then
+            stopDrag()
+        end
+    end)
+    keep(dragState.endConn)
 end))
 
 print("[Silent Aim] Clean panel loaded.")
