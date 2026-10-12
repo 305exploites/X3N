@@ -1,9 +1,10 @@
 -- ============================================================
 -- N3X CrossHairx — Silent Aim (Mobile + PC)
 -- Dark red theme. Auto-scales for mobile screens.
--- Silent aim uses Mouse.Hit hook (PC) + TouchTap hook (mobile).
+-- Silent aim: Mouse.Hit hook (PC) + strict FireServer redirect (mobile).
 -- Enable + FOV toggles. 100% hit. Prediction locked on.
--- C4 Jump toggle. Hide button labeled "HIDE". Max FOV 1500.
+-- C4 Jump uses camera X/Z for accurate mobile placement while moving.
+-- Max FOV 1500. Hide button labeled "HIDE".
 -- ============================================================
 
 local Players          = game:GetService("Players")
@@ -15,9 +16,7 @@ local player    = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 local camera    = workspace.CurrentCamera
 
--- ============================================================
 -- PERSISTENCE CHECK
--- ============================================================
 do
     local existing = playerGui:FindFirstChild("N3X_CrossHairx")
     if existing then
@@ -33,16 +32,12 @@ end
 local connections = {}
 local function keep(c) table.insert(connections, c); return c end
 
--- ============================================================
 -- DEVICE DETECTION
--- ============================================================
 local isMobile = UserInputService.TouchEnabled and not UserInputService.MouseEnabled
 local viewportAtLoad = camera.ViewportSize
 local isSmallScreen = viewportAtLoad.X < 800 or viewportAtLoad.Y < 500
 
--- ============================================================
 -- THEME
--- ============================================================
 local BG        = Color3.fromRGB(22, 8, 12)
 local BG_HDR    = Color3.fromRGB(30, 12, 18)
 local BG_LIST   = Color3.fromRGB(30, 12, 18)
@@ -78,15 +73,12 @@ local function stroke(o, color, thickness, transparency)
     return s
 end
 
--- ============================================================
 -- RESPONSIVE SIZE
--- ============================================================
 local PANEL_W, PANEL_H
 local ROW_H, SWITCH_W, SWITCH_H, LABEL_W, SLIDER_W, SLIDER_GAP
 local FONT_SIZE, FONT_SIZE_SMALL, TITLE_SIZE
 
 if isMobile or isSmallScreen then
-    -- Mobile / small screens: shrink everything
     local vp = viewportAtLoad
     PANEL_W = math.clamp(vp.X * 0.85, 260, 340)
     PANEL_H = math.clamp(vp.Y * 0.55, 240, 320)
@@ -100,7 +92,6 @@ if isMobile or isSmallScreen then
     FONT_SIZE_SMALL  = 13
     TITLE_SIZE       = 15
 else
-    -- Desktop
     PANEL_W = 360
     PANEL_H = 260
     ROW_H       = 24
@@ -152,7 +143,6 @@ _G.N3X_FovCircle = {
     end
 }
 
--- FOV circle follows mouse on PC, sits at screen center on mobile
 keep(RunService.RenderStepped:Connect(function()
     if not FovCircle.Visible then return end
     if isMobile then
@@ -472,6 +462,7 @@ local function Slider(parent, label, default, min, max, onChange)
     end))
 end
 
+-- DROPDOWN
 local function Dropdown(parent, label, options, default, onChange)
     local h = makeRow(parent, ROW_H)
     makeLabel(h, label)
@@ -569,9 +560,7 @@ local function Dropdown(parent, label, options, default, onChange)
     return btn, list
 end
 
--- ============================================================
 -- STATE
--- ============================================================
 local settings = {
     SilentEnabled      = true,
     SilentShowFOV      = true,
@@ -642,7 +631,7 @@ local function getAimPosition(part)
 end
 
 -- ============================================================
--- SILENT AIM — PC (Mouse.Hit hook) + Mobile (TouchTap hook)
+-- SILENT AIM — Mouse.Hit hook (PC) + strict FireServer redirect (mobile)
 -- ============================================================
 do
     local mouse = player:GetMouse()
@@ -670,7 +659,6 @@ do
         return hit.Instance and hit.Instance:IsDescendantOf(plr.Character)
     end
 
-    -- reference point for FOV: mouse on PC, screen center on mobile
     local function referencePoint()
         if isMobile then
             local vp = camera.ViewportSize
@@ -700,9 +688,7 @@ do
         return best
     end
 
-    -- ========================================================
-    -- PC: Mouse.Hit metatable hook
-    -- ========================================================
+    -- HOOK 1: Mouse.Hit / Target / UnitRay (PC primary)
     pcall(function()
         local mt = getrawmetatable and getrawmetatable(game)
         if mt and setreadonly and hookfunction and checkcaller and newcclosure then
@@ -731,52 +717,105 @@ do
                 return oldIndex(self, key)
             end)
             setreadonly(mt, true)
+            print("[N3X CrossHairx] Mouse.Hit hook installed.")
         else
-            warn("[N3X CrossHairx] Executor doesn't support metatable hooks (PC silent aim may not work).")
+            warn("[N3X CrossHairx] Mouse.Hit hook failed — executor lacks metatable support.")
         end
     end)
 
-    -- ========================================================
-    -- MOBILE: UserInputService.TouchTap + TapInWorld hook
-    -- Redirects the touch fire target to the closest enemy.
-    -- Also hooks TouchStarted for games that read touch position.
-    -- ========================================================
-    if isMobile then
-        -- 1) Direct tap in world — this is what most mobile games read
-        --    for "where did you shoot?" — but the game usually uses
-        --    UserInputService:GetMouseLocation() which on mobile returns
-        --    last tap position. We can spoof via Mouse hook as well.
-        -- 2) Mouse.X / Mouse.Y / Mouse.Hit on mobile return last touch,
-        --    so the metatable hook above already covers it.
+    -- HOOK 2: strict FireServer redirect (mobile primary, PC backup)
+    pcall(function()
+        local mt = getrawmetatable and getrawmetatable(game)
+        if mt and setreadonly and hookfunction and checkcaller and newcclosure then
+            local oldNamecall = mt.__namecall
 
-        -- Below: intercept TouchTap to redirect fire input before the
-        -- game processes it. TapTap gives us the tap position, we don't
-        -- consume it (input is preserved), we just recompute Mouse.Hit
-        -- via the metatable hook above — which mobile executors support
-        -- if they allow getrawmetatable.
+            local MM2_SHOOT_REMOTES = {
+                ["fire"] = true,
+                ["attack"] = true,
+                ["shoot"] = true,
+                ["gunfire"] = true,
+                ["knifehit"] = true,
+                ["hit"] = true,
+                ["damage"] = true,
+                ["bullet"] = true,
+                ["fireweapon"] = true,
+                ["shootgun"] = true,
+            }
 
-        -- Additional guard: some mobile games read from UserInputService:GetMouseLocation()
-        -- at fire time. This value is updated by TouchTap's position, so we can
-        -- nudge it by hooking GetMouseLocation to return target screen position.
-        if hookfunction and newcclosure and checkcaller then
-            pcall(function()
-                local originalGetMouseLocation = UserInputService.GetMouseLocation
-                UserInputService.GetMouseLocation = newcclosure(function(self, ...)
-                    if settings.SilentEnabled and not checkcaller() then
+            local BLOCKLIST = {
+                ["walk"] = true,
+                ["move"] = true,
+                ["jump"] = true,
+                ["animate"] = true,
+                ["equip"] = true,
+                ["unequip"] = true,
+                ["idle"] = true,
+                ["run"] = true,
+                ["sprint"] = true,
+                ["crouch"] = true,
+                ["chat"] = true,
+                ["typing"] = true,
+            }
+
+            local function isShootRemote(remote)
+                if not (remote:IsA("RemoteEvent") or remote:IsA("RemoteFunction")) then
+                    return false
+                end
+                local name = remote.Name:lower()
+                for blocked in pairs(BLOCKLIST) do
+                    if name:find(blocked) then return false end
+                end
+                if MM2_SHOOT_REMOTES[name] then return true end
+                local hits = 0
+                if name:find("fire") then hits = hits + 1 end
+                if name:find("attack") then hits = hits + 1 end
+                if name:find("shoot") then hits = hits + 1 end
+                if name:find("hit") then hits = hits + 1 end
+                if name:find("damage") then hits = hits + 1 end
+                if name:find("bullet") then hits = hits + 1 end
+                if name:find("gun") then hits = hits + 1 end
+                if name:find("knife") then hits = hits + 1 end
+                return hits >= 2
+            end
+
+            setreadonly(mt, false)
+            mt.__namecall = newcclosure(function(self, ...)
+                local method = getnamecallmethod()
+                local args = {...}
+
+                if settings.SilentEnabled and not checkcaller() then
+                    if (method == "FireServer" or method == "InvokeServer")
+                        and isShootRemote(self) then
+
                         local t = closest()
                         if t then
-                            local sp = camera:WorldToViewportPoint(t.Position)
-                            if sp then
-                                return Vector2.new(sp.X, sp.Y)
+                            local aimPos = getAimPosition(t) or t.Position
+                            local replaced = false
+                            for i = 1, #args do
+                                local a = args[i]
+                                if typeof(a) == "Vector3" then
+                                    args[i] = aimPos
+                                    replaced = true
+                                elseif typeof(a) == "CFrame" then
+                                    args[i] = CFrame.new(aimPos)
+                                    replaced = true
+                                end
+                            end
+                            if replaced then
+                                return oldNamecall(self, unpack(args))
                             end
                         end
                     end
-                    return originalGetMouseLocation(self, ...)
-                end)
-                print("[N3X CrossHairx] Mobile GetMouseLocation hook installed.")
+                end
+
+                return oldNamecall(self, ...)
             end)
+            setreadonly(mt, true)
+            print("[N3X CrossHairx] FireServer redirect hook installed (strict filter).")
+        else
+            warn("[N3X CrossHairx] Executor doesn't support __namecall hooks — mobile silent aim won't work.")
         end
-    end
+    end)
 end
 
 -- FOV CIRCLE UPDATER
@@ -812,6 +851,9 @@ do
     Section(sc, "Checks")
     Toggle(sc, "Visible Check", false, function(on) settings.SilentVisibleCheck = on end)
 
+    -- ========================================================
+    -- C4 JUMP — camera X/Z + hrp Y, yaw-only offset
+    -- ========================================================
     Section(sc, "Extras")
     do
         local c4Enabled  = false
@@ -835,20 +877,33 @@ do
             return nil
         end
 
-        local function c4CenterCFrame()
+        local function c4BuildCFrame()
             local char = player.Character
             if not char then return nil end
             local hrp = char:FindFirstChild("HumanoidRootPart")
             if not hrp then return nil end
             local cam = workspace.CurrentCamera
             if not cam then return nil end
-            local camDir = cam.CFrame.LookVector
-            local pos = hrp.Position + (camDir * 5)
-            local look = camDir
+
+            local camPos = cam.CFrame.Position
+            local myPos = hrp.Position
+
+            local flatPos = Vector3.new(camPos.X, myPos.Y, camPos.Z)
+
+            local camLook = cam.CFrame.LookVector
+            local yawDir = Vector3.new(camLook.X, 0, camLook.Z)
+            if yawDir.Magnitude < 0.001 then
+                yawDir = Vector3.new(0, 0, -1)
+            end
+            yawDir = yawDir.Unit
+
+            local placePos = flatPos + (yawDir * 3)
+
+            local look = yawDir
             local right = Vector3.new(0, 1, 0):Cross(look)
             local up = look:Cross(right)
             return CFrame.new(
-                pos.X, pos.Y, pos.Z,
+                placePos.X, placePos.Y, placePos.Z,
                 right.X, up.X, look.X,
                 right.Y, up.Y, look.Y,
                 right.Z, up.Z, look.Z
@@ -871,27 +926,36 @@ do
             tool.Activated:Connect(function() end)
         end
 
-        local function c4PlaceBomb()
+        local function c4PlaceBombNow()
             if c4Placing then return end
             if os.clock() < c4CooldownUntil then return end
             local now = os.clock()
-            if now - c4LastPlace < 0.3 then return end
+            if now - c4LastPlace < 0.25 then return end
 
             local bomb = c4FindBomb()
             if not bomb then return end
             local remote = bomb:FindFirstChild("Remote")
             if not remote then return end
-            local cf = c4CenterCFrame()
-            if not cf then return end
 
             c4Placing = true
             c4LastPlace = now
-            local ok = pcall(function() remote:FireServer(cf, 50) end)
+
+            local cf = c4BuildCFrame()
+            if not cf then
+                c4Placing = false
+                return
+            end
+
+            local ok = pcall(function()
+                remote:FireServer(cf, 50)
+            end)
+
             if ok then
                 c4CooldownUntil = os.clock() + C4_COOLDOWN
                 c4MakeJump()
             end
-            task.delay(0.2, function() c4Placing = false end)
+
+            task.delay(0.15, function() c4Placing = false end)
         end
 
         local function c4IsBlockingGui(pos)
@@ -906,11 +970,13 @@ do
 
         local function c4Start()
             c4DisconnectAll()
+
             table.insert(c4Conns, RunService.Heartbeat:Connect(function()
                 if not c4Enabled then return end
                 local bomb = c4FindBomb()
                 if bomb then c4SuppressDrop(bomb) end
             end))
+
             table.insert(c4Conns, UserInputService.InputBegan:Connect(function(input, gp)
                 if gp then return end
                 if not c4Enabled then return end
@@ -919,7 +985,7 @@ do
                     and input.UserInputType ~= Enum.UserInputType.Touch then return end
                 if not c4FindBomb() then return end
                 if c4IsBlockingGui(input.Position) then return end
-                c4PlaceBomb()
+                c4PlaceBombNow()
             end))
         end
 
@@ -937,9 +1003,9 @@ do
 end
 
 -- ============================================================
--- OPEN / CLOSE BUTTON — smaller on mobile, positioned well
+-- OPEN / CLOSE BUTTON
 -- ============================================================
-local BTN_W = isMobile and 60 or 60
+local BTN_W = 60
 local BTN_H = isMobile and 34 or 30
 local BTN_X = isMobile and 12 or 20
 local BTN_Y = isMobile and 100 or 120
@@ -980,9 +1046,7 @@ keep(UserInputService.InputBegan:Connect(function(input, gp)
     end
 end))
 
--- ============================================================
--- DRAG — tap anywhere on the header (works on mobile + PC)
--- ============================================================
+-- DRAG
 local dragging, dragStart, startPos = false, nil, nil
 keep(Header.InputBegan:Connect(function(i)
     if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
@@ -1004,23 +1068,19 @@ keep(UserInputService.InputEnded:Connect(function(i)
     end
 end))
 
--- ============================================================
--- AUTO-REPOSITION on viewport change (rotation, resize)
--- ============================================================
+-- AUTO-REPOSITION on viewport change
 keep(camera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
     if not Frame.Visible then return end
     local vp = camera.ViewportSize
-    -- keep panel roughly centered but within bounds
     local absPos = Frame.AbsolutePosition
     local absSize = Frame.AbsoluteSize
     if absPos.X < 0 or absPos.X + absSize.X > vp.X
        or absPos.Y < 0 or absPos.Y + absSize.Y > vp.Y then
         Frame.Position = UDim2.new(0.5, 0, 0.55, 0)
     end
-    -- clamp hide button
     if ToggleButton.AbsolutePosition.X + ToggleButton.AbsoluteSize.X > vp.X then
         ToggleButton.Position = UDim2.new(0, vp.X - BTN_W - 12, 0, BTN_Y)
     end
 end))
 
-print("[N3X CrossHairx] Silent Aim loaded — " .. (isMobile and "MOBILE mode" or "PC mode") .. ", FOV max 1500.")
+print("[N3X CrossHairx] Loaded — " .. (isMobile and "MOBILE mode" or "PC mode") .. ", dual-hook silent aim.")
